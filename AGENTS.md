@@ -113,7 +113,7 @@ Always verify changes by running tests and linting the codebase
 ## Documentation
 
 - **Always** write Rust docs (`///`) for all public methods, functions, structs, enums, and traits.
-- Document parameters with `# Arguments` and errors with `# Errors` sections when applicable.
+- **Never** document arguments, parameters, return types, or errors (`# Arguments`, `# Returns`, `# Errors` sections) - these are redundant with the type signatures.
 - **Do not include code examples** - docs are for LLMs, not humans. Focus on clear, concise functionality descriptions.
 
 ## Refactoring

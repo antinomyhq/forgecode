@@ -1,0 +1,206 @@
+---
+source: crates/forge_config/src/read.rs
+expression: output
+---
+# Per-agent configuration overrides, keyed by agent identifier.
+FORGE_AGENTS
+
+# Base URL for Forge's backend APIs.
+FORGE_API_URL
+
+# Format for automatically creating a dump when a task is completed.
+Set to "json" (or "true"/"1"/"yes") for JSON, "html" for HTML, or
+omit to disable.
+FORGE_AUTO_DUMP
+
+# Whether to automatically open HTML dump files in the browser.
+FORGE_AUTO_OPEN_DUMP
+
+# Custom banner text displayed on startup instead of the default ASCII art.
+FORGE_BANNER
+
+# Model identifier for commit message generation (e.g. `"gpt-4o"`).
+FORGE_COMMIT_MODEL_ID
+
+# Provider identifier for commit message generation (e.g. `"openai"`).
+FORGE_COMMIT_PROVIDER_ID
+
+# Maximum percentage of the context that can be summarized during compaction.
+FORGE_COMPACTION__EVICTION_WINDOW
+
+# Maximum number of tokens to keep after compaction.
+FORGE_COMPACTION__MAX_TOKENS
+
+# Maximum number of messages before triggering compaction.
+FORGE_COMPACTION__MESSAGE_THRESHOLD
+
+# Whether to trigger compaction when the last message is from a user.
+FORGE_COMPACTION__ON_TURN_END
+
+# Number of most recent messages to preserve during compaction.
+FORGE_COMPACTION__RETENTION_WINDOW
+
+# Maximum number of tokens before triggering compaction.
+FORGE_COMPACTION__TOKEN_THRESHOLD
+
+# Maximum number of conversation turns before triggering compaction.
+FORGE_COMPACTION__TURN_THRESHOLD
+
+# Conversion rate applied to token costs for currency display.
+FORGE_CURRENCY__CONVERSION_RATE
+
+# Currency symbol used for cost display (e.g. `"$"`, `"€"`).
+FORGE_CURRENCY__SYMBOL
+
+# Custom history file path. If omitted, uses the default history path.
+FORGE_CUSTOM_HISTORY_PATH
+
+# Path where debug request files should be written.
+FORGE_DEBUG_REQUESTS
+
+# Accept invalid TLS certificates. Use with caution.
+FORGE_HTTP__ACCEPT_INVALID_CERTS
+
+# Enable HTTP/2 adaptive window sizing.
+FORGE_HTTP__ADAPTIVE_WINDOW
+
+# Connection timeout in seconds.
+FORGE_HTTP__CONNECT_TIMEOUT
+
+# Use Hickory DNS resolver.
+FORGE_HTTP__HICKORY
+
+# Keep-alive interval in seconds. Set to `null` to disable.
+FORGE_HTTP__KEEP_ALIVE_INTERVAL
+
+# Keep-alive timeout in seconds.
+FORGE_HTTP__KEEP_ALIVE_TIMEOUT
+
+# Keep-alive while connection is idle.
+FORGE_HTTP__KEEP_ALIVE_WHILE_IDLE
+
+# Maximum number of redirects to follow.
+FORGE_HTTP__MAX_REDIRECTS
+
+# Maximum TLS protocol version to use.
+FORGE_HTTP__MAX_TLS_VERSION
+
+# Minimum TLS protocol version to use.
+FORGE_HTTP__MIN_TLS_VERSION
+
+# Pool idle timeout in seconds.
+FORGE_HTTP__POOL_IDLE_TIMEOUT
+
+# Maximum number of idle connections per host in the connection pool.
+FORGE_HTTP__POOL_MAX_IDLE_PER_HOST
+
+# Read timeout in seconds.
+FORGE_HTTP__READ_TIMEOUT
+
+# Paths to root certificate files (PEM, CRT, CER format).
+FORGE_HTTP__ROOT_CERT_PATHS
+
+# TLS backend to use.
+FORGE_HTTP__TLS_BACKEND
+
+# Maximum number of conversations to show in list.
+FORGE_MAX_CONVERSATIONS
+
+# Maximum number of file extensions to include in the system prompt.
+FORGE_MAX_EXTENSIONS
+
+# Maximum characters for fetch content.
+FORGE_MAX_FETCH_LENGTH
+
+# Maximum number of lines to read from a file.
+FORGE_MAX_FILE_LINES
+
+# Maximum characters per line for file read operations.
+FORGE_MAX_FILE_LINE_LENGTH
+
+# Maximum number of files that can be open in a single batch operation.
+FORGE_MAX_FILE_OPEN
+
+# Maximum file size in bytes for operations.
+FORGE_MAX_FILE_SIZE
+
+# Maximum image file size in bytes for binary read operations.
+FORGE_MAX_IMAGE_SIZE
+
+# Maximum number of tool-calling requests the agent may make in a single turn.
+FORGE_MAX_REQUESTS_PER_TURN
+
+# Maximum number of lines returned for FSSearch.
+FORGE_MAX_SEARCH_LINES
+
+# Maximum bytes allowed for search results.
+FORGE_MAX_SEARCH_RESULT_SIZE
+
+# Maximum number of consecutive tool failures allowed before the agent aborts the turn.
+FORGE_MAX_TOOL_FAILURE_PER_TURN
+
+# Identifier of the default model to use (e.g. `"gpt-4o"`).
+FORGE_MODEL_ID
+
+# Named presets keyed by preset identifier, each bundling model and sampling settings.
+FORGE_PRESETS
+
+# Identifier of the preset to activate by default.
+FORGE_PRESET_ID
+
+# Identifier of the default provider that hosts the model (e.g. `"openai"`).
+FORGE_PROVIDER_ID
+
+# Backoff multiplication factor applied on each successive retry attempt.
+FORGE_RETRY__BACKOFF_FACTOR
+
+# Initial delay in milliseconds before the first retry.
+FORGE_RETRY__INITIAL_DELAY
+
+# Maximum number of retry attempts.
+FORGE_RETRY__MAX_ATTEMPTS
+
+# Maximum delay between retries in seconds.
+FORGE_RETRY__MAX_DELAY
+
+# Minimum delay in milliseconds between retry attempts.
+FORGE_RETRY__MIN_DELAY
+
+# HTTP status codes that should trigger retries (e.g., 429, 500, 502).
+FORGE_RETRY__STATUS_CODES
+
+# Whether to suppress retry error logging and events.
+FORGE_RETRY__SUPPRESS_ERRORS
+
+# Maximum number of results to return from initial vector search.
+FORGE_SEM_SEARCH_LIMIT
+
+# Top-k parameter for relevance filtering during semantic search.
+FORGE_SEM_SEARCH_TOP_K
+
+# Maximum characters per line for shell output.
+FORGE_STDOUT_MAX_LINE_LENGTH
+
+# Maximum lines for shell output prefix.
+FORGE_STDOUT_MAX_PREFIX_LINES
+
+# Maximum lines for shell output suffix.
+FORGE_STDOUT_MAX_SUFFIX_LINES
+
+# Model identifier for code suggestion generation (e.g. `"gpt-4o"`).
+FORGE_SUGGEST_MODEL_ID
+
+# Provider identifier for code suggestion generation (e.g. `"openai"`).
+FORGE_SUGGEST_PROVIDER_ID
+
+# Directory path containing custom Handlebars prompt templates.
+FORGE_TEMPLATES_DIR
+
+# Maximum execution time in seconds for a single tool call.
+FORGE_TOOL_TIMEOUT
+
+# Whether to automatically apply updates.
+FORGE_UPDATE__ENABLED
+
+# How often to check for updates.
+FORGE_UPDATE__FREQUENCY

@@ -44,7 +44,7 @@ Cargo.lock
 *.d.ts
 *.js
 *.map
-**/.forge/request.body.json
+.forge.request.json
 node_modules/
 jobs/
 bench/__pycache__
