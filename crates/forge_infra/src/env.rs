@@ -1,10 +1,21 @@
 use std::collections::BTreeMap;
+use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use anyhow::{Context, Result};
 use forge_app::EnvironmentInfra;
 use forge_domain::{AutoDumpFormat, Environment, RetryConfig, TlsBackend, TlsVersion};
 use reqwest::Url;
+use tracing::warn;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BasePathMigrationOutcome {
+    Migrated,
+    BothExist,
+    NoOp,
+}
 
 #[derive(Clone)]
 pub struct ForgeEnvironmentInfra {
@@ -20,8 +31,99 @@ impl ForgeEnvironmentInfra {
     ///   use unrestricted shell mode (sh/bash)
     /// * `cwd` - Required working directory path
     pub fn new(restricted: bool, cwd: PathBuf) -> Self {
+        match Self::migrate_global_base_path() {
+            Ok(BasePathMigrationOutcome::BothExist) => {
+                warn!("Both ~/forge and ~/.forge exist; using ~/.forge and skipping migration");
+            }
+            Ok(_) => {}
+            Err(error) => {
+                warn!(
+                    error = %error,
+                    "Failed to migrate ~/forge to ~/.forge; continuing with ~/.forge"
+                );
+            }
+        }
+
         Self::dot_env(&cwd);
         Self { restricted, cwd }
+    }
+
+    fn resolve_base_path(home: Option<PathBuf>) -> PathBuf {
+        home.map(|a| a.join(".forge"))
+            .unwrap_or(PathBuf::from(".").join(".forge"))
+    }
+
+    fn migrate_global_base_path() -> Result<BasePathMigrationOutcome> {
+        let Some(home) = dirs::home_dir() else {
+            return Ok(BasePathMigrationOutcome::NoOp);
+        };
+
+        Self::migrate_global_base_path_for_home(&home)
+    }
+
+    fn migrate_global_base_path_for_home(home: &Path) -> Result<BasePathMigrationOutcome> {
+        let old_path = home.join("forge");
+        let new_path = home.join(".forge");
+
+        Self::migrate_base_path(&old_path, &new_path)
+    }
+
+    fn migrate_base_path(old_path: &Path, new_path: &Path) -> Result<BasePathMigrationOutcome> {
+        let old_exists = old_path.exists();
+        let new_exists = new_path.exists();
+
+        match (old_exists, new_exists) {
+            (true, false) => {
+                Self::move_directory_with_fallback(old_path, new_path)?;
+                Ok(BasePathMigrationOutcome::Migrated)
+            }
+            (true, true) => Ok(BasePathMigrationOutcome::BothExist),
+            _ => Ok(BasePathMigrationOutcome::NoOp),
+        }
+    }
+
+    fn move_directory_with_fallback(old_path: &Path, new_path: &Path) -> Result<()> {
+        match fs::rename(old_path, new_path) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                if error.kind() != ErrorKind::CrossesDevices {
+                    return Err(error).context("failed to rename ~/forge to ~/.forge");
+                }
+
+                Self::copy_directory_recursively(old_path, new_path)
+                    .context("failed to copy ~/forge to ~/.forge")?;
+                fs::remove_dir_all(old_path)
+                    .with_context(|| format!("failed to remove old path {}", old_path.display()))
+            }
+        }
+    }
+
+    fn copy_directory_recursively(source: &Path, target: &Path) -> Result<()> {
+        fs::create_dir_all(target)
+            .with_context(|| format!("failed to create target path {}", target.display()))?;
+
+        for entry in fs::read_dir(source)
+            .with_context(|| format!("failed to read source path {}", source.display()))?
+        {
+            let entry = entry?;
+            let source_path = entry.path();
+            let target_path = target.join(entry.file_name());
+            let metadata = entry.metadata()?;
+
+            if metadata.is_dir() {
+                Self::copy_directory_recursively(&source_path, &target_path)?;
+            } else {
+                fs::copy(&source_path, &target_path).with_context(|| {
+                    format!(
+                        "failed to copy file from {} to {}",
+                        source_path.display(),
+                        target_path.display()
+                    )
+                })?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Get path to appropriate shell based on platform and mode
@@ -60,9 +162,7 @@ impl ForgeEnvironmentInfra {
             pid: std::process::id(),
             cwd,
             shell: self.get_shell_path(),
-            base_path: dirs::home_dir()
-                .map(|a| a.join("forge"))
-                .unwrap_or(PathBuf::from(".").join("forge")),
+            base_path: Self::resolve_base_path(dirs::home_dir()),
             home: dirs::home_dir(),
             retry_config,
             max_search_lines: 200,
@@ -299,6 +399,7 @@ mod tests {
     use std::{env, fs};
 
     use forge_domain::{TlsBackend, TlsVersion};
+    use pretty_assertions::assert_eq;
     use serial_test::serial;
     use tempfile::{TempDir, tempdir};
 
@@ -359,6 +460,80 @@ mod tests {
                 env::remove_var(var);
             }
         }
+    }
+
+    #[test]
+    fn test_resolve_base_path_uses_hidden_forge_directory() {
+        let fixture = PathBuf::from("/tmp/home");
+
+        let actual = ForgeEnvironmentInfra::resolve_base_path(Some(fixture.clone()));
+        let expected = fixture.join(".forge");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_resolve_base_path_fallback_uses_hidden_relative_forge_directory() {
+        let fixture = None;
+
+        let actual = ForgeEnvironmentInfra::resolve_base_path(fixture);
+        let expected = PathBuf::from(".").join(".forge");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_migrate_global_base_path_when_old_exists_and_new_missing() {
+        let fixture = tempdir().unwrap();
+        let old_path = fixture.path().join("forge");
+        let old_file = old_path.join("nested/file.txt");
+
+        fs::create_dir_all(old_file.parent().unwrap()).unwrap();
+        fs::write(&old_file, "legacy-data").unwrap();
+
+        let actual =
+            ForgeEnvironmentInfra::migrate_global_base_path_for_home(fixture.path()).unwrap();
+        let expected = BasePathMigrationOutcome::Migrated;
+
+        assert_eq!(actual, expected);
+        assert!(!old_path.exists());
+        assert_eq!(
+            fs::read_to_string(fixture.path().join(".forge/nested/file.txt")).unwrap(),
+            "legacy-data"
+        );
+    }
+
+    #[test]
+    fn test_migrate_global_base_path_when_both_paths_exist() {
+        let fixture = tempdir().unwrap();
+        let old_file = fixture.path().join("forge/old.txt");
+        let new_file = fixture.path().join(".forge/new.txt");
+
+        fs::create_dir_all(old_file.parent().unwrap()).unwrap();
+        fs::create_dir_all(new_file.parent().unwrap()).unwrap();
+        fs::write(&old_file, "old-data").unwrap();
+        fs::write(&new_file, "new-data").unwrap();
+
+        let actual =
+            ForgeEnvironmentInfra::migrate_global_base_path_for_home(fixture.path()).unwrap();
+        let expected = BasePathMigrationOutcome::BothExist;
+
+        assert_eq!(actual, expected);
+        assert_eq!(fs::read_to_string(old_file).unwrap(), "old-data");
+        assert_eq!(fs::read_to_string(new_file).unwrap(), "new-data");
+    }
+
+    #[test]
+    fn test_migrate_global_base_path_when_neither_path_exists() {
+        let fixture = tempdir().unwrap();
+
+        let actual =
+            ForgeEnvironmentInfra::migrate_global_base_path_for_home(fixture.path()).unwrap();
+        let expected = BasePathMigrationOutcome::NoOp;
+
+        assert_eq!(actual, expected);
+        assert!(!fixture.path().join("forge").exists());
+        assert!(!fixture.path().join(".forge").exists());
     }
 
     #[test]

@@ -186,7 +186,7 @@ impl Environment {
         self.base_path.join("cache")
     }
 
-    /// Returns the global skills directory path (~/forge/skills)
+    /// Returns the global skills directory path (~/.forge/skills)
     pub fn global_skills_path(&self) -> PathBuf {
         self.base_path.join("skills")
     }
