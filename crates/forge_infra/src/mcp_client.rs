@@ -16,6 +16,7 @@ use rmcp::transport::{SseClientTransport, StreamableHttpClientTransport, TokioCh
 use rmcp::{RoleClient, ServiceExt};
 use schemars::Schema;
 use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 use crate::error::Error;
@@ -106,11 +107,21 @@ impl ForgeMcpClient {
 
                 cmd.args(&stdio.args).kill_on_drop(true);
 
-                // Use builder pattern to capture and ignore stderr to silence MCP logs
-                let (transport, _stderr) = TokioChildProcess::builder(cmd)
+                // Use builder pattern to capture stderr
+                let (transport, stderr) = TokioChildProcess::builder(cmd)
                     .stderr(std::process::Stdio::piped())
                     .spawn()?;
 
+                // Spawn a task to drain stderr to prevent buffer overflow
+                // If stderr fills up, the child process will block
+                if let Some(stderr) = stderr {
+                    tokio::spawn(async move {
+                        let mut reader = BufReader::new(stderr).lines();
+                        while let Ok(Some(line)) = reader.next_line().await {
+                            tracing::warn!("MCP server stderr: {}", line);
+                        }
+                    });
+                }
                 self.client_info().serve(transport).await?
             }
             McpServerConfig::Http(http) => {
@@ -297,6 +308,7 @@ mod tests {
                 ("X-API-Key".to_string(), "{{env.API_KEY}}".to_string()),
                 ("Content-Type".to_string(), "application/json".to_string()),
             ]),
+            timeout: None,
             disable: false,
         };
 
@@ -326,6 +338,7 @@ mod tests {
                 "Authorization".to_string(),
                 "Bearer {{env.MISSING_VAR}}".to_string(),
             )]),
+            timeout: None,
             disable: false,
         };
 
@@ -345,6 +358,7 @@ mod tests {
         let http = McpHttpServer {
             url: "https://test.example.com".to_string(),
             headers: BTreeMap::from([("Auth".to_string(), "{{env.TOKEN}}".to_string())]),
+            timeout: None,
             disable: true,
         };
 
