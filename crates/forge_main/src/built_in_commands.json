@@ -104,6 +104,10 @@
     "description": "Show workspace information with sync details"
   },
   {
+    "command": "sync-init",
+    "description": "Initialize a new workspace without syncing files"
+  },
+  {
     "command": "clone",
     "description": "Clone and manage conversation context"
   },

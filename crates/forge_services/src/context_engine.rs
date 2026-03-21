@@ -223,18 +223,28 @@ impl<F: 'static + ProviderRepository + WorkspaceIndexRepository> ForgeWorkspaceS
             .canonicalize()
             .with_context(|| format!("Failed to resolve path: {}", path.display()))?;
 
-        // Initialize workspace (finds existing or creates new)
-        let (is_new_workspace, workspace_id) = self._init_workspace(path.clone()).await?;
+        // Find existing workspace - do NOT auto-create
+        let workspace = self
+            .find_workspace_by_path(path, &token)
+            .await?
+            .context("Workspace not indexed. Please run `forge workspace init` first.")?;
+
+        let workspace_id = workspace.workspace_id.clone();
+
+        // Use the canonical root stored in the workspace record so that file
+        // discovery and remote-hash comparison are always relative to the same
+        // base, even when `path` is a subdirectory of an ancestor workspace.
+        let workspace_root = PathBuf::from(&workspace.working_dir);
 
         // Read all files and compute hashes from the workspace root path
         emit(SyncProgress::DiscoveringFiles {
-            path: path.clone(),
+            path: workspace_root.clone(),
             workspace_id: workspace_id.clone(),
         })
         .await;
 
         let results: Vec<Result<FileNode>> = self
-            .read_files(batch_size, &path, &workspace_id)
+            .read_files(batch_size, &workspace_root, &workspace_id)
             .collect()
             .await;
         let failed_statuses: Vec<forge_domain::FileStatus> = results
@@ -253,12 +263,9 @@ impl<F: 'static + ProviderRepository + WorkspaceIndexRepository> ForgeWorkspaceS
         let total_file_count = local_files.len() + failed_statuses.len();
         emit(SyncProgress::FilesDiscovered { count: total_file_count }).await;
 
-        let remote_files = if is_new_workspace {
-            Vec::new()
-        } else {
-            self.fetch_remote_hashes(&user_id, &workspace_id, &token)
-                .await?
-        };
+        let remote_files = self
+            .fetch_remote_hashes(&user_id, &workspace_id, &token)
+            .await?;
 
         emit(SyncProgress::ComparingFiles {
             remote_files: remote_files.len(),
@@ -266,7 +273,7 @@ impl<F: 'static + ProviderRepository + WorkspaceIndexRepository> ForgeWorkspaceS
         })
         .await;
 
-        let plan = WorkspaceStatus::new(path.clone(), remote_files);
+        let plan = WorkspaceStatus::new(workspace_root.clone(), remote_files);
         let local_file_hashes: Vec<forge_domain::FileHash> =
             local_files.iter().cloned().map(Into::into).collect();
         let mut statuses = plan.file_statuses(local_file_hashes);

@@ -248,6 +248,12 @@ function _forge_action_sync() {
     _forge_exec workspace sync </dev/null
 }
 
+# Action handler: inits workspace for codebase search
+function _forge_action_sync_init() {
+    echo
+    _forge_exec workspace init </dev/null
+}
+
 # Action handler: Show sync status of workspace files
 function _forge_action_sync_status() {
     echo

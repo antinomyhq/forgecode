@@ -220,6 +220,9 @@ function forge-accept-line() {
         sync)
             _forge_action_sync
         ;;
+        sync-init) 
+            _forge_action_sync_init
+        ;;
         sync-status)
             _forge_action_sync_status
         ;;
