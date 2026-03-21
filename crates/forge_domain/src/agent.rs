@@ -1,5 +1,6 @@
 use derive_setters::Setters;
 use merge::Merge;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     AgentDefinition, AgentId, Compact, Error, EventContext, MaxTokens, ModelId, ProviderId,
@@ -9,7 +10,7 @@ use crate::{
 
 /// Runtime agent representation with required model and provider
 /// Created by converting AgentDefinition with resolved defaults
-#[derive(Debug, Clone, PartialEq, Setters)]
+#[derive(Debug, Clone, PartialEq, Setters, Serialize, Deserialize)]
 #[setters(strip_option, into)]
 pub struct Agent {
     /// Flag to enable/disable tool support for this agent.
@@ -40,6 +41,7 @@ pub struct Agent {
     pub user_prompt: Option<Template<EventContext>>,
 
     /// Tools that the agent can use
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ToolName>>,
 
     /// Maximum number of turns the agent can take

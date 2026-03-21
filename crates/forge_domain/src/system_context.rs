@@ -2,7 +2,7 @@ use derive_setters::Setters;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::{Environment, File, Model, Skill};
+use crate::{Agent, Environment, File, Model, Skill};
 
 /// Statistics for a file extension
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -103,4 +103,8 @@ pub struct SystemContext {
     /// top `limit` extensions as defined in the `Extension` struct.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extensions: Option<Extension>,
+
+    /// List of available agents for task delegation
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub agents: Vec<Agent>,
 }

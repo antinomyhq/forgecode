@@ -191,6 +191,7 @@ pub enum SummaryTool {
     Followup { question: String },
     Plan { plan_name: String },
     Skill { name: String },
+    Task { agent_id: String },
     Mcp { name: String },
     TodoWrite { changes: Vec<TodoChange> },
     TodoRead,
@@ -402,6 +403,7 @@ fn extract_tool_info(call: &ToolCallFull, current_todos: &[Todo]) -> Option<Summ
                 Some(SummaryTool::TodoWrite { changes })
             }
             ToolCatalog::TodoRead(_) => Some(SummaryTool::TodoRead),
+            ToolCatalog::Task(input) => Some(SummaryTool::Task { agent_id: input.agent_id }),
         };
     }
 

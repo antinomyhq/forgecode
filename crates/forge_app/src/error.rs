@@ -40,6 +40,9 @@ pub enum Error {
     #[error("Agent '{0}' not found")]
     AgentNotFound(forge_domain::AgentId),
 
+    #[error("Conversation '{id}' not found")]
+    ConversationNotFound { id: String },
+
     #[error("No active provider configured")]
     NoActiveProvider,
 
