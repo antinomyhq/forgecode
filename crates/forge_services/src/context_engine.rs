@@ -219,8 +219,7 @@ impl<F: 'static + ProviderRepository + WorkspaceIndexRepository> ForgeWorkspaceS
         emit(SyncProgress::Starting).await;
 
         let (token, user_id) = self.get_workspace_credentials().await?;
-        let path = path
-            .canonicalize()
+        let path = dunce::canonicalize(&path)
             .with_context(|| format!("Failed to resolve path: {}", path.display()))?;
 
         // Initialize workspace (finds existing or creates new)
@@ -412,8 +411,7 @@ impl<F: 'static + ProviderRepository + WorkspaceIndexRepository> ForgeWorkspaceS
     where
         F: WorkspaceIndexRepository,
     {
-        let canonical_path = path
-            .canonicalize()
+        let canonical_path = dunce::canonicalize(&path)
             .with_context(|| format!("Failed to resolve path: {}", path.display()))?;
 
         // Get all workspaces from remote server
@@ -604,7 +602,9 @@ impl<F: 'static + ProviderRepository + WorkspaceIndexRepository> ForgeWorkspaceS
                 match result {
                     Ok(content) => {
                         let hash = compute_hash(&content);
-                        let absolute_path_str = absolute_path.to_string_lossy().to_string();
+                        let absolute_path_str = dunce::simplified(&absolute_path)
+                            .to_string_lossy()
+                            .to_string();
                         yield Ok(FileNode { file_path: absolute_path_str, content, hash });
                     }
                     Err(e) => {
@@ -618,8 +618,7 @@ impl<F: 'static + ProviderRepository + WorkspaceIndexRepository> ForgeWorkspaceS
 
     async fn _init_workspace(&self, path: PathBuf) -> Result<(bool, WorkspaceId)> {
         let (token, _user_id) = self.get_workspace_credentials().await?;
-        let path = path
-            .canonicalize()
+        let path = dunce::canonicalize(&path)
             .with_context(|| format!("Failed to resolve path: {}", path.display()))?;
 
         // Find workspace by exact match or ancestor from remote server

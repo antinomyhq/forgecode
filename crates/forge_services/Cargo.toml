@@ -21,6 +21,7 @@ handlebars.workspace = true
 forge_fs.workspace = true
 dashmap.workspace = true
 anyhow.workspace = true
+dunce.workspace = true
 futures.workspace = true
 reqwest.workspace = true
 derive_more.workspace = true
