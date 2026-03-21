@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_app::CommandInfra;
-use forge_domain::{CommandOutput, ConsoleWriter as OutputPrinterTrait, Environment};
+use forge_domain::{CommandOutput, ConsoleGuard, ConsoleWriter, Environment};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -125,8 +125,16 @@ impl ForgeCommandExecutorService {
                 stream(&mut stderr_pipe, io::sink())
             )?
         } else {
-            let stdout_writer = OutputPrinterWriter::stdout(self.output_printer.clone());
-            let stderr_writer = OutputPrinterWriter::stderr(self.output_printer.clone());
+            // Acquire exclusive terminal ownership before streaming output.
+            // This awaits until the spinner (or any other guard holder) releases
+            // the terminal, preventing interleaving of spinner frames and tool
+            // output.
+            let terminal_guard = self.output_printer.acquire().await;
+            let terminal_guard = Arc::new(terminal_guard);
+            let stdout_writer =
+                OutputPrinterWriter { guard: terminal_guard.clone(), is_stdout: true };
+            let stderr_writer =
+                OutputPrinterWriter { guard: terminal_guard, is_stdout: false };
             tokio::try_join!(
                 child.wait(),
                 stream(&mut stdout_pipe, stdout_writer),
@@ -148,36 +156,27 @@ impl ForgeCommandExecutorService {
     }
 }
 
-/// Writer that delegates to OutputPrinter for synchronized writes.
-struct OutputPrinterWriter {
-    printer: Arc<StdConsoleWriter>,
+/// Writer that delegates to a [`TerminalGuard`](crate::console::TerminalGuard)
+/// for synchronized writes while holding exclusive terminal ownership.
+struct OutputPrinterWriter<G: ConsoleGuard> {
+    guard: Arc<G>,
     is_stdout: bool,
 }
 
-impl OutputPrinterWriter {
-    fn stdout(printer: Arc<StdConsoleWriter>) -> Self {
-        Self { printer, is_stdout: true }
-    }
-
-    fn stderr(printer: Arc<StdConsoleWriter>) -> Self {
-        Self { printer, is_stdout: false }
-    }
-}
-
-impl Write for OutputPrinterWriter {
+impl<G: ConsoleGuard> Write for OutputPrinterWriter<G> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.is_stdout {
-            self.printer.write(buf)
+            self.guard.write(buf)
         } else {
-            self.printer.write_err(buf)
+            self.guard.write_err(buf)
         }
     }
 
     fn flush(&mut self) -> io::Result<()> {
         if self.is_stdout {
-            self.printer.flush()
+            self.guard.flush()
         } else {
-            self.printer.flush_err()
+            self.guard.flush_err()
         }
     }
 }

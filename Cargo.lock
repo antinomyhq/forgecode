@@ -2229,6 +2229,7 @@ name = "forge_spinner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "colored",
  "forge_domain",
  "indicatif",

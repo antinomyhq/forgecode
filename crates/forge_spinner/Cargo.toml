@@ -13,5 +13,6 @@ indicatif = "0.18.4"
 rand = "0.10.0"
 
 [dev-dependencies]
+async-trait.workspace = true
 pretty_assertions.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

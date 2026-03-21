@@ -328,20 +328,11 @@ impl GrpcInfra for ForgeInfra {
     }
 }
 
+#[async_trait::async_trait]
 impl forge_domain::ConsoleWriter for ForgeInfra {
-    fn write(&self, buf: &[u8]) -> std::io::Result<usize> {
-        self.output_printer.write(buf)
-    }
+    type Guard = <crate::console::StdConsoleWriter as forge_domain::ConsoleWriter>::Guard;
 
-    fn write_err(&self, buf: &[u8]) -> std::io::Result<usize> {
-        self.output_printer.write_err(buf)
-    }
-
-    fn flush(&self) -> std::io::Result<()> {
-        self.output_printer.flush()
-    }
-
-    fn flush_err(&self) -> std::io::Result<()> {
-        self.output_printer.flush_err()
+    async fn acquire(&self) -> Self::Guard {
+        self.output_printer.acquire().await
     }
 }

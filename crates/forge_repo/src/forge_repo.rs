@@ -624,20 +624,11 @@ impl<F: GrpcInfra> GrpcInfra for ForgeRepo<F> {
     }
 }
 
+#[async_trait::async_trait]
 impl<F: forge_domain::ConsoleWriter> forge_domain::ConsoleWriter for ForgeRepo<F> {
-    fn write(&self, buf: &[u8]) -> std::io::Result<usize> {
-        self.infra.write(buf)
-    }
+    type Guard = F::Guard;
 
-    fn write_err(&self, buf: &[u8]) -> std::io::Result<usize> {
-        self.infra.write_err(buf)
-    }
-
-    fn flush(&self) -> std::io::Result<()> {
-        self.infra.flush()
-    }
-
-    fn flush_err(&self) -> std::io::Result<()> {
-        self.infra.flush_err()
+    async fn acquire(&self) -> Self::Guard {
+        self.infra.acquire().await
     }
 }
