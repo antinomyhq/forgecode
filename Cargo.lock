@@ -2091,6 +2091,7 @@ dependencies = [
  "aws-smithy-runtime",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
+ "backon",
  "base64 0.22.1",
  "bytes",
  "chrono",
