@@ -139,9 +139,10 @@ impl ForgeCommandExecutorService {
         drop(stderr_pipe);
         drop(ready);
 
+        // Use smart encoding detection for Windows code pages (CP866, CP1251, etc.)
         Ok(CommandOutput {
-            stdout: String::from_utf8_lossy(&stdout_buffer).into_owned(),
-            stderr: String::from_utf8_lossy(&stderr_buffer).into_owned(),
+            stdout: crate::text_encoding::bytes_to_string_smart(&stdout_buffer),
+            stderr: crate::text_encoding::bytes_to_string_smart(&stderr_buffer),
             exit_code: status.code(),
             command,
         })

@@ -17,9 +17,15 @@ mod inquire;
 mod kv_storage;
 mod mcp_client;
 mod mcp_server;
+mod program_resolver;
+mod shell_type;
+mod text_encoding;
 mod walker;
 
 pub use console::StdConsoleWriter;
 pub use executor::ForgeCommandExecutorService;
 pub use forge_infra::*;
 pub use kv_storage::CacacheStorage;
+pub use program_resolver::resolve_program;
+pub use shell_type::{ShellType, discover_shell};
+pub use text_encoding::bytes_to_string_smart;

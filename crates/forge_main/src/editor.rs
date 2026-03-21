@@ -63,6 +63,36 @@ impl ForgeEditor {
         keybindings
     }
 
+    /// Detects if running in Git Bash or MinTTY on Windows
+    ///
+    /// These terminals have known issues with bracketed paste mode causing
+    /// arrow keys and other special keys to stop working after the first input.
+    fn is_git_bash_or_mintty() -> bool {
+        #[cfg(windows)]
+        {
+            // Check for MSYSTEM which is set by Git Bash (MINGW64, MINGW32, MSYS, etc.)
+            if std::env::var("MSYSTEM").is_ok() {
+                return true;
+            }
+
+            // Check for TERM=xterm or TERM=cygwin which MinTTY uses
+            if let Ok(term) = std::env::var("TERM") {
+                if term == "xterm" || term == "cygwin" || term.starts_with("xterm-") {
+                    // On Windows, xterm usually means MinTTY/Git Bash
+                    // Real Windows terminals use different TERM values or don't set it
+                    return true;
+                }
+            }
+
+            // Check for MSYS which is also set by Git Bash
+            if std::env::var("MSYS").is_ok() {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn new(env: Environment, manager: Arc<ForgeCommandManager>) -> Self {
         // Store file history in system config directory
         let history_file = env.history_path();
@@ -80,6 +110,10 @@ impl ForgeEditor {
 
         let edit_mode = Box::new(Emacs::new(Self::init()));
 
+        // Git Bash and MinTTY on Windows have issues with bracketed paste mode
+        // where arrow keys and delete stop working after the first prompt
+        let use_bracketed_paste = !Self::is_git_bash_or_mintty();
+
         let editor = Reedline::create()
             .with_completer(Box::new(InputCompleter::new(env.cwd, manager)))
             .with_history(history)
@@ -90,7 +124,7 @@ impl ForgeEditor {
             .with_edit_mode(edit_mode)
             .with_quick_completions(true)
             .with_ansi_colors(true)
-            .use_bracketed_paste(true);
+            .use_bracketed_paste(use_bracketed_paste);
         Self { editor }
     }
 

@@ -24,17 +24,11 @@ impl ForgeEnvironmentInfra {
         Self { restricted, cwd }
     }
 
-    /// Get path to appropriate shell based on platform and mode
+    /// Get path to appropriate shell based on platform and mode using shell
+    /// discovery
     fn get_shell_path(&self) -> String {
-        if cfg!(target_os = "windows") {
-            std::env::var("COMSPEC").unwrap_or("cmd.exe".to_string())
-        } else if self.restricted {
-            // Default to rbash in restricted mode
-            "/bin/rbash".to_string()
-        } else {
-            // Use user's preferred shell or fallback to sh
-            std::env::var("SHELL").unwrap_or("/bin/sh".to_string())
-        }
+        let (shell_path, _shell_type) = crate::shell_type::discover_shell(self.restricted);
+        shell_path.to_string_lossy().to_string()
     }
 
     fn get(&self) -> Environment {

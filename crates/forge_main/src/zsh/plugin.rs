@@ -72,11 +72,35 @@ pub fn generate_zsh_theme() -> Result<String> {
 /// or if the script exits with a non-zero status code
 fn execute_zsh_script_with_streaming(script_content: &str, script_name: &str) -> Result<()> {
     // Execute the script in a zsh subprocess with piped output
-    let mut child = std::process::Command::new("zsh")
+    // On Windows Git Bash, ensure we inherit environment variables for proper
+    // execution
+    let mut command = std::process::Command::new("zsh");
+    command
         .arg("-c")
         .arg(script_content)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // On Windows, explicitly pass key environment variables that Git Bash might
+    // need
+    #[cfg(windows)]
+    {
+        // Preserve PATH, HOME, and other critical variables for Git Bash/MinTTY
+        for key in &[
+            "PATH",
+            "HOME",
+            "USERPROFILE",
+            "HOMEDRIVE",
+            "HOMEPATH",
+            "ZDOTDIR",
+        ] {
+            if let Ok(value) = std::env::var(key) {
+                command.env(key, value);
+            }
+        }
+    }
+
+    let mut child = command
         .spawn()
         .context(format!("Failed to execute zsh {} script", script_name))?;
 
