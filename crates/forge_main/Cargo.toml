@@ -64,6 +64,7 @@ forge_markdown_stream.workspace = true
 strip-ansi-escapes.workspace = true
 terminal_size = "0.4"
 rustls.workspace = true
+tempfile.workspace = true
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 arboard = "3.4"
@@ -72,7 +73,6 @@ arboard = "3.4"
 tokio = { workspace = true, features = ["macros", "rt", "time", "test-util"] }
 insta.workspace = true
 pretty_assertions.workspace = true
-tempfile.workspace = true
 serial_test = "3.4"
 fake = { version = "5.1.0", features = ["derive"] }
 forge_domain = { path = "../forge_domain" }
