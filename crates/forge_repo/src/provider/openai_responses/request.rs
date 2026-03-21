@@ -331,6 +331,32 @@ impl FromDomain<ChatContext> for oai::CreateResponse {
         if let Some(reasoning) = context.reasoning {
             let reasoning_config = oai::Reasoning::from_domain(reasoning)?;
             builder.reasoning(reasoning_config);
+        } else if let Some(reasoning_effort) = context.reasoning_effort {
+            // Apply standalone reasoning_effort when no reasoning config is set
+            let oai_effort = match reasoning_effort {
+                forge_domain::ReasoningEffortLevel::None => oai::ReasoningEffort::None,
+                forge_domain::ReasoningEffortLevel::Minimal => oai::ReasoningEffort::Minimal,
+                forge_domain::ReasoningEffortLevel::Low => oai::ReasoningEffort::Low,
+                forge_domain::ReasoningEffortLevel::Medium => oai::ReasoningEffort::Medium,
+                forge_domain::ReasoningEffortLevel::High => oai::ReasoningEffort::High,
+                forge_domain::ReasoningEffortLevel::Xhigh => oai::ReasoningEffort::Xhigh,
+            };
+            let reasoning_config = oai::ReasoningArgs::default()
+                .effort(oai_effort)
+                .summary(oai::ReasoningSummary::Auto)
+                .build()
+                .map_err(anyhow::Error::from)?;
+            builder.reasoning(reasoning_config);
+        }
+
+        // Apply service tier if provided
+        if let Some(service_tier) = context.service_tier {
+            let oai_tier = match service_tier {
+                forge_domain::ServiceTier::Fast => oai::ServiceTier::Priority,
+                forge_domain::ServiceTier::Flex => oai::ServiceTier::Flex,
+                forge_domain::ServiceTier::Auto => oai::ServiceTier::Auto,
+            };
+            builder.service_tier(oai_tier);
         }
 
         if let Some(prompt_cache_key) = prompt_cache_key {

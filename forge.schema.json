@@ -69,6 +69,28 @@
         }
       ]
     },
+    "reasoning_effort": {
+      "description": "Reasoning effort level used for all agents\n\nControls the reasoning effort for models that support variable thinking\nlevels (e.g., GPT-5.x). Sent as `reasoning_effort` in the API request.\n- `none` \u2014 no reasoning, raw completion\n- `minimal` \u2014 very light reasoning\n- `low` \u2014 light reasoning, fast responses\n- `medium` \u2014 balanced reasoning effort (default for most models)\n- `high` \u2014 thorough reasoning\n- `xhigh` \u2014 maximum reasoning, most thorough responses\n- If not specified, each agent's individual setting or the model\n  provider's default will be used",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReasoningEffortLevel"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "service_tier": {
+      "description": "Service tier for API requests\n\nControls the processing priority for all agents:\n- `fast` \u2014 priority processing at 2x cost (fastest inference)\n- `flex` \u2014 flexible processing at reduced cost\n- `auto` \u2014 let the API choose the appropriate tier\n- If not specified, each agent's individual setting or the model provider's default will be used",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ServiceTier"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "templates": {
       "description": "Path pattern for custom template files (supports glob patterns)",
       "type": [
@@ -226,6 +248,18 @@
       "type": "number",
       "format": "float"
     },
+    "ReasoningEffortLevel": {
+      "description": "Controls the reasoning effort level for models that support variable thinking.\n\nThis parameter is sent directly as `reasoning_effort` in the OpenAI-compatible\nAPI request body. Models like GPT-5.x and Codex use this to control how much\ncomputation is spent on reasoning:\n- `none` \u2014 no reasoning, raw completion\n- `minimal` \u2014 very light reasoning\n- `low` \u2014 light reasoning, fast responses\n- `medium` \u2014 balanced reasoning effort (default for most models)\n- `high` \u2014 thorough reasoning\n- `xhigh` \u2014 maximum reasoning, most thorough responses",
+      "type": "string",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
     "TopK": {
       "description": "A newtype for top_k values with built-in validation\n\nTop-k controls the number of highest probability vocabulary tokens to keep:\n- Lower values (e.g., 10) make responses more focused by considering only\n  the top K most likely tokens\n- Higher values (e.g., 100) make responses more diverse by considering more\n  token options\n- Valid range is 1 to 1000 (inclusive)",
       "type": "integer",
@@ -264,6 +298,15 @@
         "daily",
         "weekly",
         "always"
+      ]
+    },
+    "ServiceTier": {
+      "description": "Controls the service tier for API requests.\n\nThis parameter is sent as `service_tier` in the OpenAI API request body:\n- `fast` \u2014 priority processing at 2x cost (maps to \"priority\" in the API)\n- `flex` \u2014 flexible processing at reduced cost\n- `auto` \u2014 let the API choose the appropriate tier",
+      "type": "string",
+      "enum": [
+        "fast",
+        "flex",
+        "auto"
       ]
     }
   }

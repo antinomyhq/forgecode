@@ -3,8 +3,8 @@ use merge::Merge;
 
 use crate::{
     AgentDefinition, AgentId, Compact, Error, EventContext, MaxTokens, ModelId, ProviderId,
-    ReasoningConfig, Result, SystemContext, Temperature, Template, ToolDefinition, ToolName, TopK,
-    TopP, Workflow,
+    ReasoningConfig, ReasoningEffortLevel, Result, ServiceTier, SystemContext, Temperature, Template,
+    ToolDefinition, ToolName, TopK, TopP, Workflow,
 };
 
 /// Runtime agent representation with required model and provider
@@ -54,6 +54,12 @@ pub struct Agent {
     /// Temperature used for agent
     pub temperature: Option<Temperature>,
 
+    /// Reasoning effort level for this agent
+    pub reasoning_effort: Option<ReasoningEffortLevel>,
+
+    /// Service tier for this agent (fast = priority processing at 2x cost)
+    pub service_tier: Option<ServiceTier>,
+
     /// Top-p (nucleus sampling) used for agent
     pub top_p: Option<TopP>,
 
@@ -90,6 +96,8 @@ impl Agent {
             compact: Compact::default(),
             custom_rules: Default::default(),
             temperature: Default::default(),
+            reasoning_effort: Default::default(),
+            service_tier: Default::default(),
             top_p: Default::default(),
             top_k: Default::default(),
             max_tokens: Default::default(),
@@ -126,6 +134,14 @@ impl Agent {
 
         if let Some(temperature) = workflow.temperature {
             agent.temperature = Some(temperature);
+        }
+
+        if let Some(reasoning_effort) = workflow.reasoning_effort {
+            agent.reasoning_effort = Some(reasoning_effort);
+        }
+
+        if let Some(service_tier) = workflow.service_tier {
+            agent.service_tier = Some(service_tier);
         }
 
         if let Some(top_p) = workflow.top_p {
@@ -199,6 +215,8 @@ impl Agent {
             system_prompt: def.system_prompt,
             user_prompt: def.user_prompt,
             temperature: def.temperature,
+            reasoning_effort: def.reasoning_effort,
+            service_tier: def.service_tier,
             max_tokens: def.max_tokens,
             top_p: def.top_p,
             top_k: def.top_k,

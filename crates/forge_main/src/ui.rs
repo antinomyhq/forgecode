@@ -1982,6 +1982,73 @@ impl<A: API + ConsoleWriter + 'static, F: Fn() -> A + Send + Sync> UI<A, F> {
                 // Use default batch size of 100 for slash command
                 self.on_index(working_dir, 100).await?;
             }
+            SlashCommand::Fast => {
+                self.state.fast_mode = !self.state.fast_mode;
+                if self.state.fast_mode {
+                    self.state.service_tier = Some(forge_domain::ServiceTier::Fast);
+                    self.state.reasoning_effort = Some(forge_domain::ReasoningEffortLevel::Xhigh);
+                    self.writeln("⚡ Fast mode ON — priority inference + xhigh reasoning (2x cost)".to_string())?;
+                } else {
+                    self.state.service_tier = None;
+                    self.state.reasoning_effort = None;
+                    self.writeln("Fast mode OFF — using default inference and reasoning".to_string())?;
+                }
+            }
+            SlashCommand::Thinking => {
+                #[derive(Clone)]
+                struct Level {
+                    value: forge_domain::ReasoningEffortLevel,
+                    label: String,
+                }
+                impl std::fmt::Display for Level {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(f, "{}", self.label)
+                    }
+                }
+                let levels = vec![
+                    Level { value: forge_domain::ReasoningEffortLevel::None, label: "none     — no reasoning".to_string() },
+                    Level { value: forge_domain::ReasoningEffortLevel::Minimal, label: "minimal  — very light reasoning".to_string() },
+                    Level { value: forge_domain::ReasoningEffortLevel::Low, label: "low      — light reasoning".to_string() },
+                    Level { value: forge_domain::ReasoningEffortLevel::Medium, label: "medium   — balanced (default)".to_string() },
+                    Level { value: forge_domain::ReasoningEffortLevel::High, label: "high     — thorough reasoning".to_string() },
+                    Level { value: forge_domain::ReasoningEffortLevel::Xhigh, label: "xhigh    — maximum reasoning".to_string() },
+                ];
+                let current_idx = self.state.reasoning_effort
+                    .map(|re| match re {
+                        forge_domain::ReasoningEffortLevel::None => 0,
+                        forge_domain::ReasoningEffortLevel::Minimal => 1,
+                        forge_domain::ReasoningEffortLevel::Low => 2,
+                        forge_domain::ReasoningEffortLevel::Medium => 3,
+                        forge_domain::ReasoningEffortLevel::High => 4,
+                        forge_domain::ReasoningEffortLevel::Xhigh => 5,
+                    })
+                    .unwrap_or(3);
+                match ForgeWidget::select("Reasoning Effort", levels)
+                    .with_starting_cursor(current_idx)
+                    .prompt()?
+                {
+                    Some(level) => {
+                        self.state.reasoning_effort = Some(level.value);
+                        self.writeln(format!("Reasoning effort set to: {}", level.value))?;
+                    }
+                    None => {}
+                }
+            }
+            SlashCommand::ThinkingSet(ref level_str) => {
+                match level_str.as_str() {
+                    "none" => self.state.reasoning_effort = Some(forge_domain::ReasoningEffortLevel::None),
+                    "minimal" => self.state.reasoning_effort = Some(forge_domain::ReasoningEffortLevel::Minimal),
+                    "low" => self.state.reasoning_effort = Some(forge_domain::ReasoningEffortLevel::Low),
+                    "medium" => self.state.reasoning_effort = Some(forge_domain::ReasoningEffortLevel::Medium),
+                    "high" => self.state.reasoning_effort = Some(forge_domain::ReasoningEffortLevel::High),
+                    "xhigh" => self.state.reasoning_effort = Some(forge_domain::ReasoningEffortLevel::Xhigh),
+                    other => {
+                        self.writeln(format!("Unknown level: {other}. Use: none, minimal, low, medium, high, xhigh"))?;
+                        return Ok(false);
+                    }
+                }
+                self.writeln(format!("Reasoning effort set to: {}", level_str))?;
+            }
             SlashCommand::AgentSwitch(agent_id) => {
                 // Validate that the agent exists by checking against loaded agents
                 let agents = self.api.get_agents().await?;

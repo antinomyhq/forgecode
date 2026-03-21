@@ -403,6 +403,10 @@ pub struct Context {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<Temperature>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<crate::ReasoningEffortLevel>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<crate::ServiceTier>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_p: Option<TopP>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_k: Option<TopK>,

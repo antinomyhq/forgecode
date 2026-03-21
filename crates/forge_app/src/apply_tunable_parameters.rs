@@ -18,6 +18,12 @@ impl ApplyTunableParameters {
         if let Some(temperature) = self.agent.temperature {
             ctx = ctx.temperature(temperature);
         }
+        if let Some(reasoning_effort) = self.agent.reasoning_effort {
+            ctx = ctx.reasoning_effort(reasoning_effort);
+        }
+        if let Some(service_tier) = self.agent.service_tier {
+            ctx = ctx.service_tier(service_tier);
+        }
         if let Some(top_p) = self.agent.top_p {
             ctx = ctx.top_p(top_p);
         }

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::temperature::Temperature;
 use crate::update::Update;
-use crate::{Compact, MaxTokens, TopK, TopP};
+use crate::{Compact, MaxTokens, ReasoningEffortLevel, ServiceTier, TopK, TopP};
 
 /// Configuration for a workflow that contains all settings
 /// required to initialize a workflow.
@@ -50,6 +50,36 @@ pub struct Workflow {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[merge(strategy = crate::merge::option)]
     pub temperature: Option<Temperature>,
+
+    /// Reasoning effort level used for all agents
+    ///
+    /// Controls the reasoning effort for models that support variable thinking
+    /// levels (e.g., GPT-5.x). Sent as `reasoning_effort` in the API request.
+    /// - `none` — no reasoning, raw completion
+    /// - `minimal` — very light reasoning
+    /// - `low` — light reasoning, fast responses
+    /// - `medium` — balanced reasoning effort (default for most models)
+    /// - `high` — thorough reasoning
+    /// - `xhigh` — maximum reasoning, most thorough responses
+    /// - If not specified, each agent's individual setting or the model
+    ///   provider's default will be used
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = crate::merge::option)]
+    pub reasoning_effort: Option<ReasoningEffortLevel>,
+
+    /// Service tier for API requests
+    ///
+    /// Controls the processing priority for all agents:
+    /// - `fast` — priority processing at 2x cost (fastest inference)
+    /// - `flex` — flexible processing at reduced cost
+    /// - `auto` — let the API choose the appropriate tier
+    /// - If not specified, each agent's individual setting or the model
+    ///   provider's default will be used
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = crate::merge::option)]
+    pub service_tier: Option<ServiceTier>,
 
     /// Top-p (nucleus sampling) used for all agents
     ///
@@ -150,6 +180,8 @@ impl Workflow {
         Self {
             custom_rules: None,
             temperature: None,
+            reasoning_effort: None,
+            service_tier: None,
             top_p: None,
             top_k: None,
             max_tokens: None,
@@ -181,6 +213,8 @@ mod tests {
         // Assert
         assert_eq!(actual.custom_rules, None);
         assert_eq!(actual.temperature, None);
+        assert_eq!(actual.reasoning_effort, None);
+        assert_eq!(actual.service_tier, None);
         assert_eq!(actual.top_p, None);
         assert_eq!(actual.top_k, None);
         assert_eq!(actual.max_tokens, None);

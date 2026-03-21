@@ -722,6 +722,8 @@ pub(super) struct ContextRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<forge_domain::ReasoningEffortLevel>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     top_p: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     top_k: Option<u32>,
@@ -748,6 +750,7 @@ impl From<&Context> for ContextRecord {
             tool_choice: context.tool_choice.as_ref().map(ToolChoiceRecord::from),
             max_tokens: context.max_tokens,
             temperature: context.temperature.map(|t| t.value()),
+            reasoning_effort: context.reasoning_effort,
             top_p: context.top_p.map(|t| t.value()),
             top_k: context.top_k.map(|t| t.value()),
             reasoning: context.reasoning.as_ref().map(ReasoningConfigRecord::from),
@@ -797,6 +800,8 @@ impl TryFrom<ContextRecord> for Context {
             temperature: record
                 .temperature
                 .map(forge_domain::Temperature::new_unchecked),
+            reasoning_effort: record.reasoning_effort,
+            service_tier: None,
             top_p: record.top_p.map(forge_domain::TopP::new_unchecked),
             top_k: record.top_k.map(forge_domain::TopK::new_unchecked),
             reasoning: record.reasoning.map(Into::into),

@@ -24,6 +24,14 @@
     "description": "Reset session model to use global config [alias: mr]"
   },
   {
+    "command": "fast",
+    "description": "Toggle fast mode (priority inference at 2x cost) [alias: f]"
+  },
+  {
+    "command": "thinking",
+    "description": "Set reasoning effort level [alias: t, reasoning]"
+  },
+  {
     "command": "config-commit-model",
     "description": "Set the model used for commit message generation [alias: ccm]"
   },

@@ -10,7 +10,10 @@ use strum_macros::Display as StrumDisplay;
 use crate::compact::Compact;
 use crate::temperature::Temperature;
 use crate::template::Template;
-use crate::{EventContext, MaxTokens, ModelId, ProviderId, SystemContext, ToolName, TopK, TopP};
+use crate::{
+    EventContext, MaxTokens, ModelId, ProviderId, ReasoningEffortLevel, ServiceTier, SystemContext, ToolName,
+    TopK, TopP,
+};
 
 // Unique identifier for an agent
 #[derive(Debug, Display, Eq, PartialEq, Hash, Clone, Serialize, Deserialize, JsonSchema)]
@@ -129,6 +132,34 @@ pub struct AgentDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[merge(strategy = crate::merge::option)]
     pub temperature: Option<Temperature>,
+
+    /// Reasoning effort level for this agent
+    ///
+    /// Controls the reasoning effort for models that support variable thinking
+    /// levels (e.g., GPT-5.x). Sent as `reasoning_effort` in the API request.
+    /// - `none` — no reasoning, raw completion
+    /// - `minimal` — very light reasoning
+    /// - `low` — light reasoning, fast responses
+    /// - `medium` — balanced reasoning effort (default for most models)
+    /// - `high` — thorough reasoning
+    /// - `xhigh` — maximum reasoning, most thorough responses
+    /// - If not specified, the model provider's default will be used
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = crate::merge::option)]
+    pub reasoning_effort: Option<ReasoningEffortLevel>,
+
+    /// Service tier for API requests
+    ///
+    /// Controls the processing priority for models that support service tiers:
+    /// - `fast` — priority processing at 2x cost (fastest inference)
+    /// - `flex` — flexible processing at reduced cost
+    /// - `auto` — let the API choose the appropriate tier
+    /// - If not specified, the model provider's default will be used
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = crate::merge::option)]
+    pub service_tier: Option<ServiceTier>,
 
     /// Top-p (nucleus sampling) used for agent
     ///
@@ -264,6 +295,8 @@ impl AgentDefinition {
             compact: Default::default(),
             custom_rules: Default::default(),
             temperature: Default::default(),
+            reasoning_effort: Default::default(),
+            service_tier: Default::default(),
             top_p: Default::default(),
             top_k: Default::default(),
             max_tokens: Default::default(),
