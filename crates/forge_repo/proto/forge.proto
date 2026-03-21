@@ -47,6 +47,9 @@ service ForgeService {
 
   // Searches for needle in haystack using fuzzy search
   rpc FuzzySearch(FuzzySearchRequest) returns (FuzzySearchResponse);
+
+  // Lists all available LLM providers and their configurations
+  rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
 }
 
 // Node types
@@ -359,4 +362,68 @@ message FuzzySearchResponse {
 message SearchMatch {
   uint32 start_line = 1;
   uint32 end_line   = 2;
+}
+
+// Provider-related messages
+
+message ListProvidersRequest {}
+
+message ListProvidersResponse {
+  repeated Provider providers = 1;
+}
+
+message Provider {
+  string                    id              = 1;
+  optional string           api_key_vars    = 2;
+  repeated string           url_param_vars  = 3;
+  optional string           response_type   = 4;
+  string                    url             = 5;
+  ProviderModels            models          = 6;
+  repeated AuthMethod       auth_methods    = 7;
+  map<string, string>       custom_headers  = 8;
+  optional string           provider_type   = 9;
+}
+
+message ProviderModels {
+  oneof kind {
+    string        url         = 1;
+    ModelList     model_list  = 2;
+  }
+}
+
+message ModelList {
+  repeated Model models = 1;
+}
+
+message Model {
+  string          id                           = 1;
+  optional string name                         = 2;
+  optional string description                  = 3;
+  optional uint64 context_length               = 4;
+  optional bool   tools_supported              = 5;
+  optional bool   supports_parallel_tool_calls = 6;
+  optional bool   supports_reasoning           = 7;
+  repeated string input_modalities             = 8;
+}
+
+message AuthMethod {
+  oneof method {
+    string      api_key       = 1;
+    OAuthConfig oauth_device  = 2;
+    OAuthConfig oauth_code    = 3;
+    string      google_adc    = 4;
+    OAuthConfig codex_device  = 5;
+  }
+}
+
+message OAuthConfig {
+  string              auth_url          = 1;
+  string              token_url         = 2;
+  string              client_id         = 3;
+  repeated string     scopes            = 4;
+  optional string     redirect_uri      = 5;
+  bool                use_pkce          = 6;
+  optional string     token_refresh_url = 7;
+  map<string, string> custom_headers    = 8;
+  map<string, string> extra_auth_params = 9;
 }
