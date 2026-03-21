@@ -89,7 +89,7 @@ jobs:
       uses: actions/checkout@v6
     - id: create_release
       name: Draft Release
-      uses: release-drafter/release-drafter@v6
+      uses: release-drafter/release-drafter@v7
       with:
         config-name: release-drafter.yml
       env:
