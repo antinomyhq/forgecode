@@ -69,6 +69,30 @@ impl ToolCallPayload {
     }
 }
 
+/// The reason a user chose to uninstall Forge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum UninstallReason {
+    FoundBetterTool,
+    TooSlowOrHeavy,
+    MissingFeatures,
+    TooManyBugs,
+    OnlyNeededTemporarily,
+    Other(String),
+}
+
+impl std::fmt::Display for UninstallReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FoundBetterTool => write!(f, "Found a better tool"),
+            Self::TooSlowOrHeavy => write!(f, "Too slow or resource-heavy"),
+            Self::MissingFeatures => write!(f, "Missing features I need"),
+            Self::TooManyBugs => write!(f, "Too many bugs or crashes"),
+            Self::OnlyNeededTemporarily => write!(f, "Only needed it temporarily"),
+            Self::Other(reason) => write!(f, "Other: {reason}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum EventKind {
     Start,
@@ -77,6 +101,7 @@ pub enum EventKind {
     Error(String),
     Trace(Vec<u8>),
     Login(Identity),
+    Uninstall(UninstallReason),
 }
 
 impl EventKind {
@@ -88,6 +113,7 @@ impl EventKind {
             Self::ToolCall(_) => Name::from("tool_call".to_string()),
             Self::Trace(_) => Name::from("trace".to_string()),
             Self::Login(_) => Name::from("login".to_string()),
+            Self::Uninstall(_) => Name::from("uninstall".to_string()),
         }
     }
     pub fn value(&self) -> String {
@@ -98,6 +124,7 @@ impl EventKind {
             Self::ToolCall(payload) => serde_json::to_string(&payload).unwrap_or_default(),
             Self::Trace(trace) => String::from_utf8_lossy(trace).to_string(),
             Self::Login(id) => id.login.to_owned(),
+            Self::Uninstall(reason) => reason.to_string(),
         }
     }
 }

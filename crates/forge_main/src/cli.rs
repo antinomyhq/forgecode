@@ -169,6 +169,9 @@ pub enum TopLevelCommand {
     /// Update forge to the latest version.
     Update(UpdateArgs),
 
+    /// Uninstall forge from the system.
+    Uninstall,
+
     /// Setup zsh integration by updating .zshrc with plugin and theme (alias
     /// for `zsh setup`).
     Setup,

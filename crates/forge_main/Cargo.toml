@@ -59,6 +59,7 @@ forge_embed.workspace = true
 include_dir.workspace = true
 indexmap.workspace = true
 async-recursion.workspace = true
+dirs.workspace = true
 
 forge_markdown_stream.workspace = true
 strip-ansi-escapes.workspace = true
