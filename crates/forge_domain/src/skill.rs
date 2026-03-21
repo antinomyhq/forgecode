@@ -47,6 +47,86 @@ impl Skill {
     }
 }
 
+/// Simplified skill information used when requesting skill selection.
+///
+/// Contains only the name and description fields required to send a skill
+/// selection request to the remote ranking service.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillInfo {
+    /// Name of the skill
+    pub name: String,
+    /// Description of the skill
+    pub description: String,
+}
+
+impl SkillInfo {
+    /// Creates a new skill info entry.
+    ///
+    /// # Arguments
+    /// * `name` - The skill identifier
+    /// * `description` - A brief description of what the skill does
+    pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
+        Self { name: name.into(), description: description.into() }
+    }
+}
+
+/// A skill selected based on relevance to a user prompt.
+///
+/// Holds the name and relevance score returned after ranking available skills
+/// against a user query. Used to inject skill hints as droppable context
+/// messages before an LLM turn.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Setters)]
+#[setters(strip_option, into)]
+pub struct SelectedSkill {
+    /// Name of the selected skill
+    pub name: String,
+    /// Relevance score (0.0–1.0) of the skill against the user prompt
+    pub relevance: f32,
+    /// 1-based rank of this skill in the selection results
+    pub rank: u64,
+}
+
+impl SelectedSkill {
+    /// Creates a new selected skill entry.
+    ///
+    /// # Arguments
+    /// * `name` - The skill identifier
+    /// * `relevance` - How relevant the skill is (0.0–1.0)
+    /// * `rank` - Position in the ranked list (1-based)
+    pub fn new(name: impl Into<String>, relevance: f32, rank: u64) -> Self {
+        Self { name: name.into(), relevance, rank }
+    }
+}
+
+impl From<&SelectedSkill> for forge_template::Element {
+    fn from(skill: &SelectedSkill) -> Self {
+        forge_template::Element::new("skill").attr("name", &skill.name)
+    }
+}
+
+/// Request parameters for skill selection.
+///
+/// Bundles the list of available skills and the user's prompt into a single
+/// request to send to the remote ranking service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillSelectionParams {
+    /// List of available skills to select from
+    pub skills: Vec<SkillInfo>,
+    /// User's prompt to match skills against
+    pub user_prompt: String,
+}
+
+impl SkillSelectionParams {
+    /// Creates new skill selection parameters.
+    ///
+    /// # Arguments
+    /// * `skills` - The candidate skills to rank
+    /// * `user_prompt` - The user query used to score relevance
+    pub fn new(skills: Vec<SkillInfo>, user_prompt: impl Into<String>) -> Self {
+        Self { skills, user_prompt: user_prompt.into() }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;

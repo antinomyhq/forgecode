@@ -9,8 +9,9 @@ use forge_app::{
     WalkerInfra, WorkspaceService, WorkspaceStatus, compute_hash,
 };
 use forge_domain::{
-    AuthCredential, AuthDetails, FileHash, FileNode, ProviderId, ProviderRepository, SyncProgress,
-    UserId, WorkspaceId, WorkspaceIndexRepository,
+    AuthCredential, AuthDetails, FileHash, FileNode, ProviderId, ProviderRepository, SkillInfo,
+    SkillRepository, SkillSelectionParams, SyncProgress, UserId, WorkspaceId,
+    WorkspaceIndexRepository,
 };
 use forge_stream::MpscStream;
 use futures::future::join_all;
@@ -658,6 +659,7 @@ impl<
         + EnvironmentInfra
         + CommandInfra
         + WalkerInfra
+        + SkillRepository
         + 'static,
 > WorkspaceService for ForgeWorkspaceService<F>
 {
@@ -878,5 +880,24 @@ impl<
         } else {
             Err(forge_domain::Error::WorkspaceAlreadyInitialized(workspace_id).into())
         }
+    }
+
+    async fn recommend_skills(&self, use_case: String) -> Result<Vec<forge_domain::SelectedSkill>> {
+        let (token, _user_id) = self.get_workspace_credentials().await?;
+
+        let skill_infos: Vec<SkillInfo> = self
+            .infra
+            .load_skills()
+            .await?
+            .iter()
+            .map(|s| SkillInfo::new(&s.name, &s.description))
+            .collect();
+
+        let params = SkillSelectionParams::new(skill_infos, use_case);
+
+        self.infra
+            .select_skill(params, &token)
+            .await
+            .context("Failed to select skills")
     }
 }

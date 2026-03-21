@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use forge_app::GrpcInfra;
 use forge_domain::{
-    ApiKey, FileUploadInfo, Node, UserId, WorkspaceAuth, WorkspaceId, WorkspaceIndexRepository,
-    WorkspaceInfo,
+    ApiKey, FileUploadInfo, Node, SelectedSkill, SkillSelectionParams, UserId, WorkspaceAuth,
+    WorkspaceId, WorkspaceIndexRepository, WorkspaceInfo,
 };
 
 use crate::proto_generated::forge_service_client::ForgeServiceClient;
@@ -382,5 +382,37 @@ impl<I: GrpcInfra> WorkspaceIndexRepository for ForgeContextEngineRepository<I> 
         client.delete_workspace(request).await?;
 
         Ok(())
+    }
+
+    async fn select_skill(
+        &self,
+        request: SkillSelectionParams,
+        auth_token: &ApiKey,
+    ) -> Result<Vec<SelectedSkill>> {
+        let skills: Vec<proto_generated::Skill> = request
+            .skills
+            .into_iter()
+            .map(|skill| proto_generated::Skill {
+                name: skill.name,
+                description: skill.description,
+            })
+            .collect();
+
+        let grpc_request =
+            tonic::Request::new(SelectSkillRequest { skills, user_prompt: request.user_prompt });
+
+        let grpc_request = self.with_auth(grpc_request, auth_token)?;
+
+        let channel = self.infra.channel();
+        let mut client = ForgeServiceClient::new(channel);
+        let response = client.select_skill(grpc_request).await?.into_inner();
+
+        let selected_skills = response
+            .skills
+            .into_iter()
+            .map(|skill| SelectedSkill::new(skill.name, skill.relevance, skill.rank))
+            .collect();
+
+        Ok(selected_skills)
     }
 }

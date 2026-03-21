@@ -134,8 +134,3 @@ Choose tools based on the nature of the task:
 - Avoid generating long hashes or binary code
 - Validate changes by compiling and running tests
 - Do not delete failing tests without a compelling reason
-
-{{#if skills}}
-{{> forge-partial-skill-instructions.md}}
-{{else}}
-{{/if}}

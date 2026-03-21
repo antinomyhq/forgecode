@@ -341,6 +341,20 @@ pub trait WorkspaceService: Send + Sync {
 
     /// Initialize a workspace without syncing files
     async fn init_workspace(&self, path: PathBuf) -> anyhow::Result<WorkspaceId>;
+
+    /// Recommend relevant skills for a given use case.
+    ///
+    /// Sends the user's query and the list of available skills to the remote
+    /// ranking service, which returns the most relevant skills ranked by
+    /// relevance score.
+    ///
+    /// # Errors
+    /// Returns an error if authentication, skill loading, or the remote ranking
+    /// call fails.
+    async fn recommend_skills(
+        &self,
+        use_case: String,
+    ) -> anyhow::Result<Vec<forge_domain::SelectedSkill>>;
 }
 
 #[async_trait::async_trait]
@@ -1163,5 +1177,12 @@ impl<I: Services> WorkspaceService for I {
 
     async fn init_workspace(&self, path: PathBuf) -> anyhow::Result<WorkspaceId> {
         self.workspace_service().init_workspace(path).await
+    }
+
+    async fn recommend_skills(
+        &self,
+        use_case: String,
+    ) -> anyhow::Result<Vec<forge_domain::SelectedSkill>> {
+        self.workspace_service().recommend_skills(use_case).await
     }
 }

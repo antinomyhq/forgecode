@@ -181,8 +181,6 @@ impl<S: AgentService> Orchestrator<S> {
     pub async fn run(&mut self) -> anyhow::Result<()> {
         let model_id = self.get_model();
 
-        let mut context = self.conversation.context.clone().unwrap_or_default();
-
         // Fire the Start lifecycle event
         let start_event = LifecycleEvent::Start(EventData::new(
             self.agent.clone(),
@@ -192,6 +190,8 @@ impl<S: AgentService> Orchestrator<S> {
         self.hook
             .handle(&start_event, &mut self.conversation)
             .await?;
+
+        let mut context = self.conversation.context.clone().unwrap_or_default();
 
         // Signals that the loop should suspend (task may or may not be completed)
         let mut should_yield = false;

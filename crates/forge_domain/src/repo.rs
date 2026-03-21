@@ -176,6 +176,22 @@ pub trait WorkspaceIndexRepository: Send + Sync {
         workspace_id: &WorkspaceId,
         auth_token: &crate::ApiKey,
     ) -> anyhow::Result<()>;
+
+    /// Select relevant skills for a user prompt using the remote ranking
+    /// service.
+    ///
+    /// # Arguments
+    /// * `request` - The skill selection parameters including candidate skills
+    ///   and user prompt
+    /// * `auth_token` - API key used to authenticate with the remote service
+    ///
+    /// # Errors
+    /// Returns an error if the gRPC call fails or the response is malformed.
+    async fn select_skill(
+        &self,
+        request: crate::SkillSelectionParams,
+        auth_token: &crate::ApiKey,
+    ) -> anyhow::Result<Vec<crate::SelectedSkill>>;
 }
 
 /// Repository for managing skills
