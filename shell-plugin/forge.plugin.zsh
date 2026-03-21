@@ -26,6 +26,7 @@ source "${0:A:h}/lib/actions/editor.zsh"
 source "${0:A:h}/lib/actions/provider.zsh"
 source "${0:A:h}/lib/actions/doctor.zsh"
 source "${0:A:h}/lib/actions/keyboard.zsh"
+source "${0:A:h}/lib/actions/echo.zsh"
 
 # Main dispatcher and widget registration
 source "${0:A:h}/lib/dispatcher.zsh"

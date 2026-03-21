@@ -120,6 +120,10 @@
     "description": "Display ZSH keyboard shortcuts [alias: kb]"
   },
   {
+    "command": "echo",
+    "description": "Echo the input text"
+  },
+  {
     "command": "setup",
     "description": "Setup zsh integration by updating .zshrc"
   }
