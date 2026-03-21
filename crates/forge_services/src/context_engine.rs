@@ -46,12 +46,87 @@ fn allowed_extensions() -> &'static HashSet<String> {
 /// Checks if a file has an allowed extension for workspace syncing (O(1)
 /// lookup)
 fn has_allowed_extension(path: &Path) -> bool {
+    if is_generated_file(path) {
+        return false;
+    }
     if let Some(extension) = path.extension() {
         let ext = extension.to_string_lossy().to_lowercase();
         allowed_extensions().contains(&ext)
     } else {
         false
     }
+}
+
+/// Checks if a file is auto-generated (lock files, build outputs, minified
+/// assets, etc.)
+fn is_generated_file(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+
+    let name_lower = name.to_lowercase();
+
+    // Lock files: *-lock.json, *.lock, *.lockb, *.lock.json, etc.
+    if name_lower.ends_with(".lock")
+        || name_lower.ends_with(".lockb")
+        || name_lower.ends_with("-lock.json")
+        || name_lower.ends_with("-lock.yaml")
+        || name_lower.ends_with("-lock.yml")
+        || name_lower.ends_with(".lock.json")
+        || name_lower.ends_with(".lockfile")
+        || name == "Package.resolved"
+    // Swift PM exception
+    {
+        return true;
+    }
+
+    // Shrinkwrap files
+    if name_lower.contains("shrinkwrap") {
+        return true;
+    }
+
+    // OS generated files
+    if matches!(name, ".DS_Store" | "Thumbs.db" | "desktop.ini") {
+        return true;
+    }
+
+    // IDE/Editor generated
+    if matches!(name, ".project" | ".classpath") {
+        return true;
+    }
+
+    // Minified files: *.min.js, *.min.css, etc.
+    if name_lower.contains(".min.") {
+        return true;
+    }
+
+    // Source maps: *.js.map, *.css.map, *.mjs.map, etc.
+    if name_lower.ends_with(".map")
+        && (name_lower.contains(".js")
+            || name_lower.contains(".css")
+            || name_lower.contains(".mjs"))
+    {
+        return true;
+    }
+
+    // Bundle/vendor/chunk outputs: bundle.*, vendor.*, chunk.*
+    if (name_lower.starts_with("bundle.")
+        || name_lower.starts_with("vendor.")
+        || name_lower.starts_with("chunk."))
+        && (name_lower.ends_with(".js") || name_lower.ends_with(".css"))
+    {
+        return true;
+    }
+
+    // Compiled bytecode: *.pyc, *.pyo, *.class
+    if name_lower.ends_with(".pyc")
+        || name_lower.ends_with(".pyo")
+        || name_lower.ends_with(".class")
+    {
+        return true;
+    }
+
+    false
 }
 
 /// Service for indexing workspaces and performing semantic search
