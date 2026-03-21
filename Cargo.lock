@@ -2114,6 +2114,7 @@ dependencies = [
  "gray_matter",
  "handlebars",
  "insta",
+ "is_ci",
  "lazy_static",
  "merge",
  "mockito",

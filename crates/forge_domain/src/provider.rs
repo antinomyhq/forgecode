@@ -10,7 +10,18 @@ use crate::{ApiKey, AuthCredential, AuthDetails, Model, Template};
 
 /// Distinguishes between different categories of providers
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, Default,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    Display,
+    EnumString,
+    Default,
+    JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -178,13 +189,20 @@ impl From<String> for ProviderId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum ProviderResponse {
+    /// OpenAI-compatible chat completions format
     OpenAI,
+    /// OpenAI Responses API format
     OpenAIResponses,
+    /// Anthropic messages format
     Anthropic,
+    /// AWS Bedrock format
     Bedrock,
+    /// Google AI format
     Google,
+    /// OpenCode proxy format — response type is determined by the selected
+    /// model
     OpenCode,
 }
 

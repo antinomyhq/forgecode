@@ -8,44 +8,55 @@ use forge_domain::{
     ProviderRepository, ProviderType, URLParam, URLParamValue,
 };
 use merge::Merge;
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 /// Represents the source of models for a provider
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
-enum Models {
+pub enum Models {
     /// Models are fetched from a URL
     Url(String),
     /// Models are hardcoded in the configuration
     Hardcoded(Vec<forge_app::domain::Model>),
 }
 
-#[derive(Debug, Clone, Deserialize, Merge)]
-struct ProviderConfig {
+/// Configuration for a single provider entry in provider.json
+#[derive(Debug, Clone, Deserialize, Merge, JsonSchema)]
+pub struct ProviderConfig {
+    /// Unique identifier for this provider
     #[merge(strategy = overwrite)]
-    id: ProviderId,
+    pub id: ProviderId,
+    /// The type of provider (llm or context_engine)
     #[serde(default)]
     #[merge(strategy = overwrite)]
-    provider_type: ProviderType,
+    pub provider_type: ProviderType,
+    /// Environment variable name holding the API key
     #[serde(default)]
     #[merge(strategy = overwrite)]
-    api_key_vars: Option<String>,
+    pub api_key_vars: Option<String>,
+    /// Environment variable names holding URL parameters
     #[serde(default)]
     #[merge(strategy = merge::vec::append)]
-    url_param_vars: Vec<String>,
+    pub url_param_vars: Vec<String>,
+    /// The response format type used by this provider
     #[serde(default)]
     #[merge(strategy = overwrite)]
-    response_type: Option<ProviderResponse>,
+    pub response_type: Option<ProviderResponse>,
+    /// The endpoint URL (supports template variables like {{VAR}})
     #[merge(strategy = overwrite)]
-    url: String,
+    pub url: String,
+    /// Source of models for this provider (URL or hardcoded list)
     #[serde(default)]
     #[merge(strategy = overwrite)]
-    models: Option<Models>,
+    pub models: Option<Models>,
+    /// Authentication methods supported by this provider
     #[merge(strategy = merge::vec::append)]
-    auth_methods: Vec<forge_domain::AuthMethod>,
+    pub auth_methods: Vec<forge_domain::AuthMethod>,
+    /// Custom HTTP headers to include in all requests to this provider
     #[serde(default)]
     #[merge(strategy = overwrite)]
-    custom_headers: Option<std::collections::HashMap<String, String>>,
+    pub custom_headers: Option<std::collections::HashMap<String, String>>,
 }
 
 fn overwrite<T>(base: &mut T, other: T) {

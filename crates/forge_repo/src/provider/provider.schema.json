@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Array_of_ProviderConfig",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/ProviderConfig"
+  },
+  "$defs": {
+    "AuthMethod": {
+      "description": "Authentication method configuration",
+      "oneOf": [
+        {
+          "description": "Authenticate using an API key",
+          "type": "string",
+          "const": "api_key"
+        },
+        {
+          "description": "Authenticate using OAuth device flow",
+          "type": "object",
+          "properties": {
+            "oauth_device": {
+              "$ref": "#/$defs/OAuthConfig"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "oauth_device"
+          ]
+        },
+        {
+          "description": "Authenticate using OAuth authorization code flow",
+          "type": "object",
+          "properties": {
+            "oauth_code": {
+              "$ref": "#/$defs/OAuthConfig"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "oauth_code"
+          ]
+        },
+        {
+          "description": "Authenticate using Google Application Default Credentials",
+          "type": "string",
+          "const": "google_adc"
+        },
+        {
+          "description": "Authenticate using OpenAI Codex device flow",
+          "type": "object",
+          "properties": {
+            "codex_device": {
+              "$ref": "#/$defs/OAuthConfig"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "codex_device"
+          ]
+        }
+      ]
+    },
+    "InputModality": {
+      "description": "Represents input modalities that a model can accept",
+      "oneOf": [
+        {
+          "description": "Text input (all models support this)",
+          "type": "string",
+          "const": "text"
+        },
+        {
+          "description": "Image input (vision-capable models)",
+          "type": "string",
+          "const": "image"
+        }
+      ]
+    },
+    "Model": {
+      "type": "object",
+      "properties": {
+        "context_length": {
+          "description": "Maximum context window size in tokens",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "description": {
+          "description": "Description of the model's capabilities",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Unique model identifier",
+          "type": "string"
+        },
+        "input_modalities": {
+          "description": "Input modalities supported by the model (defaults to text-only)",
+          "type": "array",
+          "default": [
+            "text"
+          ],
+          "items": {
+            "$ref": "#/$defs/InputModality"
+          }
+        },
+        "name": {
+          "description": "Human-readable display name for the model",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "supports_parallel_tool_calls": {
+          "description": "Whether the model supports parallel tool calls",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supports_reasoning": {
+          "description": "Whether the model supports reasoning",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tools_supported": {
+          "description": "Whether the model supports tool/function calls",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "Models": {
+      "description": "Represents the source of models for a provider",
+      "anyOf": [
+        {
+          "description": "Models are fetched from a URL",
+          "type": "string"
+        },
+        {
+          "description": "Models are hardcoded in the configuration",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Model"
+          }
+        }
+      ]
+    },
+    "OAuthConfig": {
+      "description": "OAuth configuration for authentication flows",
+      "type": "object",
+      "properties": {
+        "auth_url": {
+          "description": "The URL to initiate the OAuth authorization or device code flow",
+          "type": "string"
+        },
+        "client_id": {
+          "description": "The OAuth client identifier",
+          "type": "string"
+        },
+        "custom_headers": {
+          "description": "Custom HTTP headers to include in OAuth requests",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "extra_auth_params": {
+          "description": "Extra parameters to include in the authorization request",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "redirect_uri": {
+          "description": "The redirect URI for authorization code flows",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scopes": {
+          "description": "The OAuth scopes to request",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "token_refresh_url": {
+          "description": "The URL to refresh the token after OAuth-with-API-Key flow",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "token_url": {
+          "description": "The URL to exchange authorization codes or device codes for access\ntokens",
+          "type": "string"
+        },
+        "use_pkce": {
+          "description": "Whether to use PKCE (Proof Key for Code Exchange)",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "auth_url",
+        "token_url",
+        "client_id",
+        "scopes"
+      ]
+    },
+    "ProviderConfig": {
+      "description": "Configuration for a single provider entry in provider.json",
+      "type": "object",
+      "properties": {
+        "api_key_vars": {
+          "description": "Environment variable name holding the API key",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "auth_methods": {
+          "description": "Authentication methods supported by this provider",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuthMethod"
+          }
+        },
+        "custom_headers": {
+          "description": "Custom HTTP headers to include in all requests to this provider",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": null
+        },
+        "id": {
+          "description": "Unique identifier for this provider",
+          "$ref": "#/$defs/ProviderId"
+        },
+        "models": {
+          "description": "Source of models for this provider (URL or hardcoded list)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Models"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider_type": {
+          "description": "The type of provider (llm or context_engine)",
+          "$ref": "#/$defs/ProviderType",
+          "default": "llm"
+        },
+        "response_type": {
+          "description": "The response format type used by this provider",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "url": {
+          "description": "The endpoint URL (supports template variables like {{VAR}})",
+          "type": "string"
+        },
+        "url_param_vars": {
+          "description": "Environment variable names holding URL parameters",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "url",
+        "auth_methods"
+      ]
+    },
+    "ProviderId": {
+      "description": "--- IMPORTANT ---\nThe order of providers is important because that would be order in which the\nproviders will be resolved",
+      "type": "string"
+    },
+    "ProviderResponse": {
+      "oneOf": [
+        {
+          "description": "OpenAI-compatible chat completions format",
+          "type": "string",
+          "const": "OpenAI"
+        },
+        {
+          "description": "OpenAI Responses API format",
+          "type": "string",
+          "const": "OpenAIResponses"
+        },
+        {
+          "description": "Anthropic messages format",
+          "type": "string",
+          "const": "Anthropic"
+        },
+        {
+          "description": "AWS Bedrock format",
+          "type": "string",
+          "const": "Bedrock"
+        },
+        {
+          "description": "Google AI format",
+          "type": "string",
+          "const": "Google"
+        },
+        {
+          "description": "OpenCode proxy format — response type is determined by the selected\nmodel",
+          "type": "string",
+          "const": "OpenCode"
+        }
+      ]
+    },
+    "ProviderType": {
+      "description": "Distinguishes between different categories of providers",
+      "oneOf": [
+        {
+          "description": "LLM providers for chat completions (default for backward compatibility)",
+          "type": "string",
+          "const": "llm"
+        },
+        {
+          "description": "Context engine providers for code indexing and search",
+          "type": "string",
+          "const": "context_engine"
+        }
+      ]
+    }
+  }
+}

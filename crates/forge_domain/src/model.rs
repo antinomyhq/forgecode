@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use strum_macros::EnumString;
 
 /// Represents input modalities that a model can accept
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, EnumString)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, EnumString, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase", ascii_case_insensitive)]
 pub enum InputModality {
@@ -20,13 +20,18 @@ fn default_input_modalities() -> Vec<InputModality> {
     vec![InputModality::Text]
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Setters)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Setters, JsonSchema)]
 pub struct Model {
+    /// Unique model identifier
     pub id: ModelId,
+    /// Human-readable display name for the model
     pub name: Option<String>,
+    /// Description of the model's capabilities
     pub description: Option<String>,
+    /// Maximum context window size in tokens
     pub context_length: Option<u64>,
     // TODO: add provider information to the model
+    /// Whether the model supports tool/function calls
     pub tools_supported: Option<bool>,
     /// Whether the model supports parallel tool calls
     pub supports_parallel_tool_calls: Option<bool>,

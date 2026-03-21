@@ -1,18 +1,24 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::OAuthConfig;
 
 /// Authentication method configuration
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthMethod {
+    /// Authenticate using an API key
     ApiKey,
+    /// Authenticate using OAuth device flow
     #[serde(rename = "oauth_device")]
     OAuthDevice(OAuthConfig),
+    /// Authenticate using OAuth authorization code flow
     #[serde(rename = "oauth_code")]
     OAuthCode(OAuthConfig),
+    /// Authenticate using Google Application Default Credentials
     #[serde(rename = "google_adc")]
     GoogleAdc,
+    /// Authenticate using OpenAI Codex device flow
     #[serde(rename = "codex_device")]
     CodexDevice(OAuthConfig),
 }

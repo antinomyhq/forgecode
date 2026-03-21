@@ -16,3 +16,5 @@ mod proto_generated {
 
 // Only expose forge_repo container
 pub use forge_repo::*;
+// Expose ProviderConfig for schema generation
+pub use provider::ProviderConfig;
