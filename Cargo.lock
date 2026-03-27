@@ -2076,6 +2076,7 @@ dependencies = [
  "google-cloud-auth",
  "http 1.4.0",
  "libsqlite3-sys",
+ "mockito",
  "oauth2",
  "pretty_assertions",
  "reqwest 0.12.28",

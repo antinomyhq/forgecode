@@ -1,6 +1,7 @@
 mod console;
 mod env;
 pub mod executor;
+pub mod tensorlake;
 
 mod auth;
 mod error;
@@ -24,3 +25,4 @@ pub use env::ForgeEnvironmentInfra;
 pub use executor::ForgeCommandExecutorService;
 pub use forge_infra::*;
 pub use kv_storage::CacacheStorage;
+pub use tensorlake::{TensorlakeCommandExecutor, TensorlakeConfig};

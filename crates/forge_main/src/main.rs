@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use forge_api::ForgeAPI;
+use forge_api::{ForgeAPI, TensorlakeConfig};
 use forge_domain::TitleFormat;
 use forge_main::{Cli, Sandbox, TitleDisplayExt, UI, tracker};
 
@@ -19,7 +19,11 @@ async fn main() -> Result<()> {
     // available
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    // Set up panic hook for better error display
+    // Set up panic hook for better error display.
+    // Important: do NOT call `std::process::exit` here. Exiting inside the hook
+    // skips stack unwinding, which prevents `Drop` implementations (such as the
+    // Tensorlake `SandboxGuard`) from running. Returning from the hook lets Rust
+    // unwind the stack normally so all destructors fire before the process exits.
     panic::set_hook(Box::new(|panic_info| {
         let message = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
             s.to_string()
@@ -31,7 +35,6 @@ async fn main() -> Result<()> {
 
         println!("{}", TitleFormat::error(message.to_string()).display());
         tracker::error_blocking(message);
-        std::process::exit(1);
     }));
 
     // Initialize and run the UI
@@ -62,7 +65,17 @@ async fn main() -> Result<()> {
         (_, _) => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
     };
 
-    let mut ui = UI::init(cli, move || ForgeAPI::init(cwd.clone()))?;
+    let tensorlake_key = cli.tensorlake.clone();
+    let mut ui = UI::init(cli, move || {
+        if let Some(api_key) = &tensorlake_key {
+            ForgeAPI::init_with_tensorlake(
+                cwd.clone(),
+                TensorlakeConfig::new(api_key.to_string()),
+            )
+        } else {
+            ForgeAPI::init(cwd.clone())
+        }
+    })?;
     ui.run().await;
 
     Ok(())

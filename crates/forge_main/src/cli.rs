@@ -50,6 +50,15 @@ pub struct Cli {
     #[arg(long)]
     pub sandbox: Option<String>,
 
+    /// Run all shell commands inside an isolated Tensorlake Firecracker microVM
+    /// sandbox.
+    ///
+    /// Requires a valid Tensorlake API key. Can also be supplied via the
+    /// TENSORLAKE_API_KEY environment variable. When set, every shell tool call
+    /// is routed through a remote Tensorlake sandbox instead of the local host.
+    #[arg(long, env = "TENSORLAKE_API_KEY")]
+    pub tensorlake: Option<String>,
+
     /// Enable verbose logging output.
     #[arg(long, default_value_t = false)]
     pub verbose: bool,
