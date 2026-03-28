@@ -239,6 +239,52 @@ function _forge_action_suggest_model() {
     )
 }
 
+# Action handler: Browse and set FORGE_* environment variables.
+#
+# Displays an fzf list of all known FORGE_* variables with their current
+# values.  Selecting a variable prompts for a new value and writes it to
+# the nearest .env file via `forge config set env KEY VALUE`.
+function _forge_action_config_env() {
+    local input_text="$1"
+    echo
+
+    # Fetch the full variable list from the CLI.
+    local env_list
+    env_list=$($_FORGE_BIN config get env 2>/dev/null)
+    if [[ -z "$env_list" ]]; then
+        _forge_log error "Could not retrieve FORGE_* variable list"
+        return 0
+    fi
+
+    local selected
+    selected=$(echo "$env_list" \
+        | grep -v '^$' \
+        | grep -v 'FORGE_\* environment' \
+        | _forge_fzf \
+            --prompt="Env Var ❯ " \
+            --query="$input_text" \
+            --delimiter="  " \
+            --with-nth=1 \
+            --preview="echo {} | sed 's/  /\n/g'" \
+            --preview-window="bottom:3:wrap")
+
+    if [[ -n "$selected" ]]; then
+        # Extract just the variable name (first whitespace-delimited token).
+        local var_name
+        var_name=$(echo "$selected" | awk '{print $1}')
+
+        # Prompt for the new value using zle read-from-minibuffer if available,
+        # otherwise fall back to plain `read`.
+        local new_value
+        echo -n "Set ${var_name}= "
+        read -r new_value
+
+        if [[ -n "$new_value" ]]; then
+            _forge_exec config set env "$var_name" "$new_value"
+        fi
+    fi
+}
+
 # Action handler: Sync workspace for codebase search
 function _forge_action_sync() {
     echo

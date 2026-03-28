@@ -3448,6 +3448,9 @@ impl<A: API + ConsoleWriter + 'static, F: Fn() -> A + Send + Sync> UI<A, F> {
                     format!("is now the suggest model for provider '{provider}'"),
                 ))?;
             }
+            ConfigSetField::Env { key, value } => {
+                self.handle_config_env_set(&key, &value)?;
+            }
         }
 
         Ok(())
@@ -3509,8 +3512,139 @@ impl<A: API + ConsoleWriter + 'static, F: Fn() -> A + Send + Sync> UI<A, F> {
                     None => self.writeln("Suggest: Not set")?,
                 }
             }
+            ConfigGetField::Env { key } => {
+                self.handle_config_env_get(key.as_deref())?;
+            }
         }
 
+        Ok(())
+    }
+
+    /// Write a FORGE_* environment variable to the nearest `.env` file.
+    ///
+    /// If the key already exists it is updated in-place; otherwise it is
+    /// appended.  The `.env` file is created in the current working directory
+    /// when it does not already exist.
+    fn handle_config_env_set(&mut self, key: &str, value: &str) -> Result<()> {
+        let cwd = self.api.environment().cwd;
+        let env_path = cwd.join(".env");
+
+        let existing = if env_path.exists() {
+            std::fs::read_to_string(&env_path)?
+        } else {
+            String::new()
+        };
+
+        let mut lines: Vec<String> = existing.lines().map(|l| l.to_string()).collect();
+        let prefix = format!("{key}=");
+        let new_line = format!("{key}={value}");
+        let mut found = false;
+        for line in lines.iter_mut() {
+            if line.starts_with(&prefix) {
+                *line = new_line.clone();
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            lines.push(new_line);
+        }
+
+        let mut content = lines.join("\n");
+        if !content.ends_with('\n') {
+            content.push('\n');
+        }
+        std::fs::write(&env_path, &content)?;
+
+        // Apply to the running process immediately so the change takes effect
+        // without restarting forge.
+        unsafe { std::env::set_var(key, value) };
+
+        self.writeln_title(
+            TitleFormat::action(key).sub_title(format!("set to '{value}' in {}", env_path.display())),
+        )?;
+        Ok(())
+    }
+
+    /// Print the current value of one or all FORGE_* environment variables.
+    ///
+    /// When `key` is `None` every known FORGE_* variable is listed together
+    /// with its default value so users can discover what is configurable.
+    fn handle_config_env_get(&mut self, key: Option<&str>) -> Result<()> {
+        /// Catalogue of every user-facing FORGE_* environment variable.
+        struct EnvVar {
+            name: &'static str,
+            default: &'static str,
+            description: &'static str,
+        }
+
+        const KNOWN_VARS: &[EnvVar] = &[
+            EnvVar { name: "FORGE_TOOL_TIMEOUT",            default: "300",      description: "Max seconds a shell tool is allowed to run" },
+            EnvVar { name: "FORGE_MAX_SEARCH_RESULT_BYTES", default: "10240",    description: "Max bytes returned by a file-search result" },
+            EnvVar { name: "FORGE_STDOUT_MAX_LINE_LENGTH",  default: "2000",     description: "Truncate stdout lines longer than this" },
+            EnvVar { name: "FORGE_MAX_LINE_LENGTH",         default: "2000",     description: "Max line length for file reads" },
+            EnvVar { name: "FORGE_MAX_FILE_READ_BATCH_SIZE",default: "auto",     description: "Max files read in parallel (default: 2×CPU)" },
+            EnvVar { name: "FORGE_PARALLEL_FILE_READS",     default: "auto",     description: "File-read parallelism (default: 2×CPU)" },
+            EnvVar { name: "FORGE_MAX_IMAGE_SIZE",          default: "10485760", description: "Max image attachment size in bytes (10 MiB)" },
+            EnvVar { name: "FORGE_MAX_CONVERSATIONS",       default: "100",      description: "Max conversations kept in history" },
+            EnvVar { name: "FORGE_SEM_SEARCH_LIMIT",        default: "200",      description: "Max candidates for semantic search" },
+            EnvVar { name: "FORGE_SEM_SEARCH_TOP_K",        default: "20",       description: "Top-K results returned by semantic search" },
+            EnvVar { name: "FORGE_MAX_EXTENSIONS",          default: "15",       description: "Max skill extensions loaded" },
+            EnvVar { name: "FORGE_MODEL_CACHE_TTL",         default: "604800",   description: "Model list cache TTL in seconds (1 week)" },
+            EnvVar { name: "FORGE_HISTORY_FILE",            default: "",         description: "Custom path for shell history file" },
+            EnvVar { name: "FORGE_API_URL",                 default: "https://antinomy.ai/api/v1/", description: "Forge backend API base URL" },
+            EnvVar { name: "FORGE_WORKSPACE_SERVER_URL",    default: "https://api.forgecode.dev/",  description: "Workspace server base URL" },
+            EnvVar { name: "FORGE_AUTO_DUMP",               default: "",         description: "Auto-dump conversation on exit: json | html" },
+            EnvVar { name: "FORGE_DUMP_AUTO_OPEN",          default: "false",    description: "Open dump file automatically after saving" },
+            EnvVar { name: "FORGE_DEBUG_REQUESTS",          default: "",         description: "Directory to write raw HTTP request logs" },
+            EnvVar { name: "FORGE_RETRY_MAX_ATTEMPTS",      default: "3",        description: "Max retry attempts for failed HTTP requests" },
+            EnvVar { name: "FORGE_RETRY_INITIAL_BACKOFF_MS",default: "1000",     description: "Initial retry backoff in milliseconds" },
+            EnvVar { name: "FORGE_RETRY_BACKOFF_FACTOR",    default: "2",        description: "Exponential backoff multiplier" },
+            EnvVar { name: "FORGE_RETRY_STATUS_CODES",      default: "429,500,502,503,504", description: "Comma-separated HTTP status codes to retry" },
+            EnvVar { name: "FORGE_SUPPRESS_RETRY_ERRORS",   default: "false",    description: "Suppress error output during retries" },
+            EnvVar { name: "FORGE_HTTP_CONNECT_TIMEOUT",    default: "30",       description: "HTTP connection timeout in seconds" },
+            EnvVar { name: "FORGE_HTTP_READ_TIMEOUT",       default: "120",      description: "HTTP read timeout in seconds" },
+            EnvVar { name: "FORGE_HTTP_POOL_IDLE_TIMEOUT",  default: "90",       description: "HTTP connection pool idle timeout in seconds" },
+            EnvVar { name: "FORGE_HTTP_POOL_MAX_IDLE_PER_HOST", default: "10",   description: "Max idle HTTP connections per host" },
+            EnvVar { name: "FORGE_HTTP_MAX_REDIRECTS",      default: "10",       description: "Max HTTP redirects followed" },
+            EnvVar { name: "FORGE_HTTP_USE_HICKORY",        default: "false",    description: "Use Hickory DNS resolver instead of system" },
+            EnvVar { name: "FORGE_HTTP_TLS_BACKEND",        default: "native",   description: "TLS backend: native | rustls" },
+            EnvVar { name: "FORGE_HTTP_MIN_TLS_VERSION",    default: "",         description: "Minimum TLS version: 1.2 | 1.3" },
+            EnvVar { name: "FORGE_HTTP_MAX_TLS_VERSION",    default: "",         description: "Maximum TLS version: 1.2 | 1.3" },
+            EnvVar { name: "FORGE_HTTP_ADAPTIVE_WINDOW",    default: "false",    description: "Enable HTTP/2 adaptive flow-control window" },
+            EnvVar { name: "FORGE_HTTP_KEEP_ALIVE_INTERVAL",default: "15",       description: "TCP keep-alive probe interval in seconds (none to disable)" },
+            EnvVar { name: "FORGE_HTTP_KEEP_ALIVE_TIMEOUT", default: "15",       description: "TCP keep-alive timeout in seconds" },
+            EnvVar { name: "FORGE_HTTP_KEEP_ALIVE_WHILE_IDLE", default: "true",  description: "Send keep-alive probes while connection is idle" },
+            EnvVar { name: "FORGE_HTTP_ACCEPT_INVALID_CERTS", default: "false",  description: "Skip TLS certificate validation (insecure)" },
+            EnvVar { name: "FORGE_HTTP_ROOT_CERT_PATHS",    default: "",         description: "Comma-separated paths to extra CA certificate files" },
+        ];
+
+        if let Some(k) = key {
+            let upper_key = k.to_uppercase();
+            match std::env::var(&upper_key) {
+                Ok(val) => self.writeln(format!("{upper_key}={val}"))?,
+                Err(_) => {
+                    // Show default if key is known
+                    if let Some(entry) = KNOWN_VARS.iter().find(|e| e.name == upper_key) {
+                        self.writeln(format!("{upper_key} (not set, default: {})", entry.default))?;
+                    } else {
+                        self.writeln(format!("{upper_key} is not set"))?;
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        // List all known variables
+        self.writeln_title(TitleFormat::action("FORGE_* environment variables"))?;
+        for ev in KNOWN_VARS {
+            let current = std::env::var(ev.name).ok();
+            let value_display = match &current {
+                Some(v) => format!("{v}  (set)"),
+                None => format!("{}  (default)", ev.default),
+            };
+            self.writeln(format!("{:<40} {}  # {}", ev.name, value_display, ev.description))?;
+        }
         Ok(())
     }
 
