@@ -386,6 +386,23 @@ pub mod tests {
             Ok(())
         }
 
+        async fn append(&self, path: &Path, contents: Bytes) -> anyhow::Result<()> {
+            let index = self.files.lock().unwrap().iter().position(|v| v.0 == path);
+            if let Some(index) = index {
+                let mut files = self.files.lock().unwrap();
+                let existing = files[index].1.clone();
+                let mut merged = existing.to_vec();
+                merged.extend_from_slice(contents.as_ref());
+                files[index] = (path.to_path_buf(), Bytes::from(merged));
+            } else {
+                self.files
+                    .lock()
+                    .unwrap()
+                    .push((path.to_path_buf(), contents));
+            }
+            Ok(())
+        }
+
         async fn write_temp(&self, _: &str, _: &str, content: &str) -> anyhow::Result<PathBuf> {
             let temp_dir = crate::utils::TempDir::new().unwrap();
             let path = temp_dir.path();

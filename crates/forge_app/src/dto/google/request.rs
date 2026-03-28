@@ -360,6 +360,8 @@ impl From<Context> for Request {
             contents.push(Content { role: Some(Role::User), parts: pending_tool_parts });
         }
 
+        let conversation_id = context.conversation_id.map(|id| id.to_string());
+
         // Convert tools
         let tools = if !context.tools.is_empty() {
             Some(vec![Tool::FunctionDeclarations {
@@ -424,7 +426,11 @@ impl From<Context> for Request {
             tool_config,
             safety_settings: None,
             cached_content: None,
-            labels: None,
+            labels: conversation_id.map(|conversation_id| {
+                serde_json::json!({
+                    "conversation_id": conversation_id,
+                })
+            }),
         }
     }
 }
@@ -561,9 +567,38 @@ impl From<forge_domain::Image> for Part {
 
 #[cfg(test)]
 mod tests {
-    use forge_domain::{ToolCallArguments, ToolCallFull, ToolCallId, ToolName, ToolResult};
+    use forge_domain::{
+        Context, ConversationId, ToolCallArguments, ToolCallFull, ToolCallId, ToolName, ToolResult,
+    };
+    use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn test_request_includes_conversation_id_label_when_present() {
+        let fixture = ConversationId::generate();
+        let actual =
+            serde_json::to_value(Request::from(Context::default().conversation_id(fixture)))
+                .unwrap();
+        let expected = serde_json::Value::String(fixture.to_string());
+
+        assert_eq!(actual["labels"]["conversation_id"], expected);
+    }
+
+    #[test]
+    fn test_request_omits_conversation_id_label_when_absent() {
+        let fixture = Context::default();
+        let actual = serde_json::to_value(Request::from(fixture)).unwrap();
+        let expected = serde_json::Value::Null;
+
+        assert_eq!(
+            actual
+                .get("labels")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            expected
+        );
+    }
 
     #[test]
     fn test_tool_call_args_serialization() {

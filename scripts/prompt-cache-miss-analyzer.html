@@ -1,0 +1,1611 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prompt Cache Miss Analyzer</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/diff2html@3.4.47/bundles/css/diff2html.min.css"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #171513;
+        --bg-2: #1f1b18;
+        --bg-3: #25211d;
+        --panel: rgba(42, 38, 34, 0.88);
+        --panel-2: rgba(53, 48, 43, 0.9);
+        --border: rgba(224, 212, 199, 0.18);
+        --border-strong: rgba(224, 212, 199, 0.34);
+        --text: #f8f3ec;
+        --muted: #d0c4b7;
+        --danger: #ffaba0;
+        --warning: #f0cf9a;
+        --success: #9ad5ad;
+        --accent: #e2c39a;
+        --accent-2: #c5ab88;
+        --shadow: 0 14px 34px rgba(0, 0, 0, 0.36);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        overflow-x: clip;
+        background:
+          radial-gradient(980px 680px at 8% -14%, rgba(226, 195, 154, 0.11), transparent 62%),
+          radial-gradient(900px 640px at 108% 4%, rgba(197, 171, 136, 0.1), transparent 64%),
+          linear-gradient(170deg, var(--bg) 0%, var(--bg-2) 52%, var(--bg-3) 100%);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        max-width: 1680px;
+        margin: 0 auto;
+        padding: 24px 24px 52px;
+        display: grid;
+        grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+        gap: 22px;
+        align-items: start;
+        min-width: 0;
+      }
+
+      .layout-sidebar {
+        display: grid;
+        gap: 16px;
+        position: sticky;
+        top: 18px;
+        max-height: calc(100vh - 36px);
+        overflow: auto;
+        padding-right: 4px;
+        scrollbar-gutter: stable;
+      }
+
+      .layout-main {
+        min-width: 0;
+        display: grid;
+        gap: 14px;
+      }
+
+      .layout-main #results {
+        margin: 0;
+        display: grid;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .results-grid {
+        display: grid;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .layout-main #results > .panel-title {
+        margin: 0;
+        background: linear-gradient(180deg, rgba(53, 48, 43, 0.94), rgba(42, 38, 34, 0.88));
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 11px 13px;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        margin: 0;
+      }
+
+      p,
+      li {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .hero,
+      .panel,
+      .pair {
+        position: relative;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(10px);
+      }
+
+      .hero::before,
+      .panel::before,
+      .pair::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        padding: 1px;
+        background: linear-gradient(120deg, rgba(226, 195, 154, 0.26), rgba(197, 171, 136, 0.16), transparent 72%);
+        mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        mask-composite: exclude;
+        -webkit-mask-composite: xor;
+        pointer-events: none;
+      }
+
+      .hero {
+        padding: 22px;
+        margin-bottom: 0;
+        overflow: hidden;
+      }
+
+      .hero h1 {
+        font-size: clamp(1.8rem, 2.6vw, 2.5rem);
+        letter-spacing: -0.01em;
+        margin-bottom: 8px;
+      }
+
+      .hero p {
+        max-width: 100%;
+      }
+
+      .hero ul {
+        margin: 12px 0 0;
+        padding-left: 20px;
+      }
+
+      .panel {
+        padding: 18px;
+        margin-bottom: 0;
+      }
+
+      .upload-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+        padding: 12px;
+        border-radius: 10px;
+        background: rgba(248, 243, 236, 0.045);
+        border: 1px solid rgba(224, 212, 199, 0.2);
+      }
+
+      fieldset {
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+
+      legend {
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .panel-title {
+        margin-bottom: 12px;
+        font-size: 1rem;
+      }
+
+      .filter-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: 10px;
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(248, 243, 236, 0.035);
+        border: 1px solid rgba(224, 212, 199, 0.16);
+      }
+
+      .select-input {
+        min-width: 0;
+        width: 100%;
+        background: rgba(33, 29, 26, 0.9);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        padding: 9px 10px;
+      }
+
+      .selection-title {
+        grid-column: 1 / -1;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      input[type="file"] {
+        width: 100%;
+        background: rgba(33, 29, 26, 0.9);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        padding: 9px 10px;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+        gap: 10px;
+      }
+
+      .summary-card {
+        margin: 0;
+        background: rgba(248, 243, 236, 0.03);
+        border: 1px solid rgba(224, 212, 199, 0.2);
+        border-radius: 10px;
+        padding: 11px;
+      }
+
+      .summary-label {
+        margin: 0;
+        color: var(--muted);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+
+      .summary-value {
+        margin: 6px 0 0;
+        font-size: 22px;
+        font-weight: 650;
+        line-height: 1.2;
+        text-wrap: balance;
+      }
+
+      .pair {
+        padding: 16px;
+        margin-bottom: 14px;
+        overflow-x: hidden;
+      }
+
+      .pair-header {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .pair-header h3 {
+        font-size: 1.05rem;
+      }
+
+      .pair-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 8px;
+        margin: 0 0 12px;
+        min-width: 0;
+      }
+
+      .meta-item {
+        background: rgba(248, 243, 236, 0.03);
+        border: 1px solid rgba(224, 212, 199, 0.18);
+        border-radius: 10px;
+        padding: 9px 10px;
+      }
+
+      .meta-item dt {
+        margin: 0 0 3px;
+        font-size: 10px;
+        text-transform: uppercase;
+        color: var(--muted);
+        letter-spacing: 0.1em;
+      }
+
+      .meta-item dd {
+        margin: 0;
+        color: var(--text);
+      }
+
+      .badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 12px;
+        padding: 0;
+        list-style: none;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 11px;
+        border: 1px solid var(--border);
+        background: rgba(248, 243, 236, 0.04);
+      }
+
+      .badge-danger {
+        color: var(--danger);
+        border-color: rgba(255, 171, 160, 0.42);
+      }
+
+      .badge-warning {
+        color: var(--warning);
+        border-color: rgba(240, 207, 154, 0.45);
+      }
+
+      .badge-success {
+        color: var(--success);
+        border-color: rgba(154, 213, 173, 0.42);
+      }
+
+      .risk-list {
+        margin: 0 0 14px;
+        padding-left: 18px;
+      }
+
+      .section {
+        margin-top: 14px;
+        min-width: 0;
+      }
+
+      .section-title {
+        margin-bottom: 8px;
+        font-size: 14px;
+      }
+
+      .diff-table {
+        width: 100%;
+        border-collapse: collapse;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        table-layout: fixed;
+      }
+
+      .diff-table th,
+      .diff-table td {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        vertical-align: top;
+        padding: 8px 10px;
+      }
+
+      .diff-table th {
+        background: var(--panel-2);
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .line-cell {
+        width: 70px;
+        color: var(--muted);
+        text-align: right;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      .code-cell {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .row-change {
+        background: rgba(240, 207, 154, 0.12);
+      }
+
+      .row-add {
+        background: rgba(154, 213, 173, 0.12);
+      }
+
+      .row-remove {
+        background: rgba(255, 171, 160, 0.12);
+      }
+
+      .empty {
+        color: var(--muted);
+        padding: 14px;
+        border: 1px dashed rgba(224, 212, 199, 0.28);
+        border-radius: 10px;
+        background: rgba(248, 243, 236, 0.018);
+      }
+
+      .error-list {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #f1d6b4;
+        background: rgba(248, 243, 236, 0.06);
+        border-radius: 5px;
+        padding: 1px 4px;
+      }
+
+      input[type="file"]:focus-visible,
+      .select-input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .d2h-wrapper {
+        border: 1px solid rgba(224, 212, 199, 0.24);
+        border-radius: 10px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        max-width: 100%;
+      }
+
+      .d2h-wrapper .d2h-file-wrapper,
+      .d2h-wrapper .d2h-file-diff,
+      .d2h-wrapper .d2h-files-diff,
+      .d2h-wrapper .d2h-diff-table,
+      .d2h-wrapper .d2h-code-wrapper {
+        background: var(--panel-2);
+        color: var(--text);
+        min-width: 0;
+      }
+
+      .d2h-wrapper .d2h-file-header,
+      .d2h-wrapper .d2h-tag,
+      .d2h-wrapper .d2h-code-side-linenumber,
+      .d2h-wrapper .d2h-code-side-line {
+        background: var(--panel-2);
+        color: var(--text);
+      }
+
+      .d2h-wrapper .d2h-file-header {
+        display: none;
+      }
+
+      .d2h-wrapper .d2h-file-diff,
+      .d2h-wrapper .d2h-diff-table,
+      .d2h-wrapper .d2h-code-side-diff,
+      .d2h-wrapper .d2h-code-linenumber,
+      .d2h-wrapper .d2h-code-side-line {
+        table-layout: fixed;
+      }
+
+      .d2h-wrapper .d2h-code-side-linenumber {
+        width: 56px;
+        min-width: 56px;
+        max-width: 56px;
+      }
+
+      .d2h-wrapper .d2h-code-side-line {
+        width: auto;
+      }
+
+      .d2h-wrapper .d2h-diff-table,
+      .d2h-wrapper .d2h-file-diff {
+        width: 100%;
+        max-width: 100%;
+      }
+
+      .d2h-wrapper .d2h-code-line-ctn,
+      .d2h-wrapper .d2h-code-line,
+      .d2h-wrapper .d2h-code-side-line {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .d2h-wrapper .d2h-ins {
+        background: rgba(154, 213, 173, 0.2);
+      }
+
+      .d2h-wrapper .d2h-del {
+        background: rgba(255, 171, 160, 0.2);
+      }
+
+      .d2h-wrapper .d2h-cntx {
+        color: var(--muted);
+      }
+
+      .d2h-wrapper .d2h-code-line-ctn {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      .hero,
+      .panel,
+      .pair,
+      .summary-card,
+      .meta-item,
+      .badge,
+      .d2h-wrapper {
+        transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease,
+          background-color 160ms ease;
+      }
+
+      .pair:hover,
+      .panel:hover,
+      .hero:hover {
+        border-color: rgba(224, 212, 199, 0.28);
+        box-shadow: 0 18px 34px rgba(0, 0, 0, 0.34);
+      }
+
+      .summary-card:hover,
+      .meta-item:hover {
+        transform: translateY(-1px);
+        border-color: rgba(224, 212, 199, 0.3);
+      }
+
+      .layout-sidebar::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .layout-sidebar::-webkit-scrollbar-thumb {
+        background: rgba(224, 212, 199, 0.24);
+        border-radius: 999px;
+      }
+
+      .layout-sidebar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      @media (max-width: 1320px) {
+        main {
+          grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+          gap: 18px;
+        }
+      }
+
+      @media (max-width: 1060px) {
+        main {
+          grid-template-columns: 1fr;
+          gap: 16px;
+          padding: 18px 14px 30px;
+        }
+
+        .layout-sidebar {
+          position: static;
+          max-height: none;
+          overflow: visible;
+          padding-right: 0;
+        }
+
+        .layout-main {
+          gap: 10px;
+        }
+
+        .layout-main #results > .panel-title {
+          position: static;
+        }
+      }
+
+      @media (max-width: 900px) {
+        .summary-value {
+          font-size: 21px;
+        }
+
+        .pair {
+          padding: 14px;
+        }
+
+        .panel,
+        .hero {
+          padding: 14px;
+        }
+
+        .upload-row,
+        .filter-row {
+          grid-template-columns: 1fr;
+          padding: 10px;
+        }
+
+        .badge {
+          max-width: 100%;
+          white-space: normal;
+          line-height: 1.35;
+        }
+
+        .select-input {
+          min-width: 0;
+          width: 100%;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <aside class="layout-sidebar">
+        <header class="hero">
+          <h1>Prompt Cache Miss Analyzer</h1>
+          <p>
+            Upload a debug request JSONL file and compare only consecutive requests from the same
+            conversation id. The analyzer hides unchanged pairs, parses embedded JSON strings before
+            comparison, and renders a formatted side-by-side JSON diff for messages, tools, and
+            cache-key-surface fields (generation config, labels, URL, and selected headers).
+          </p>
+          <ul>
+            <li>Conversation id extraction checks request/session/cache fields plus <code>labels.conversation_id</code>.</li>
+            <li>Appending new messages at the end does not create risk by itself.</li>
+            <li>If older messages, tools, or cache-key-surface fields change, the pair is flagged.</li>
+          </ul>
+        </header>
+
+        <section class="panel" aria-labelledby="input-heading">
+          <h2 id="input-heading" class="panel-title">Input</h2>
+          <form id="analyzer-input-form" novalidate>
+            <fieldset>
+              <legend>Upload and filter debug requests</legend>
+              <div class="upload-row">
+                <label for="file-input" class="badge">JSON/JSONL file</label>
+                <input id="file-input" type="file" accept=".json,.jsonl,application/json" />
+                <output id="file-name" class="badge">No file selected</output>
+              </div>
+              <div id="conversation-filter" class="filter-row" hidden>
+                <label for="conversation-select" class="badge">Conversation</label>
+                <select id="conversation-select" class="select-input"></select>
+                <output id="conversation-selection-title" class="selection-title"></output>
+              </div>
+            </fieldset>
+          </form>
+        </section>
+
+        <section id="summary" class="panel" aria-live="polite" aria-labelledby="summary-heading">
+          <h2 id="summary-heading" class="panel-title">Summary</h2>
+          <p class="empty">Upload a JSONL file to begin analysis.</p>
+        </section>
+
+        <section id="errors" class="panel" aria-labelledby="errors-heading" hidden></section>
+      </aside>
+
+      <section class="layout-main">
+        <section id="results" aria-live="polite" aria-labelledby="results-heading">
+          <h2 id="results-heading" class="panel-title">Diff results</h2>
+          <div id="results-content" class="results-grid"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/diff@7.0.0/dist/diff.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/diff2html@3.4.47/bundles/js/diff2html.min.js"></script>
+    <script>
+      const fileInput = document.getElementById('file-input');
+      const fileName = document.getElementById('file-name');
+      const summary = document.getElementById('summary');
+      const errors = document.getElementById('errors');
+      const results = document.getElementById('results-content');
+      const conversationFilter = document.getElementById('conversation-filter');
+      const conversationSelect = document.getElementById('conversation-select');
+      const conversationSelectionTitle = document.getElementById('conversation-selection-title');
+
+      let latestAnalysisState = {
+        totalEntries: 0,
+        analyses: [],
+        parseErrors: [],
+        skippedNoConversationId: [],
+        conversationCount: 0,
+        conversationIds: []
+      };
+
+      fileInput.addEventListener('change', async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) {
+          return;
+        }
+
+        fileName.textContent = file.name;
+        const text = await file.text();
+        analyze(text);
+      });
+
+      conversationSelect.addEventListener('change', () => {
+        renderFromState();
+      });
+
+      function analyze(text) {
+        const { entries, errors: parseErrors } = parseInputEntries(text);
+        const parsed = [];
+
+        entries.forEach((entry, index) => {
+          if (!isObject(entry) || entry.__invalid === true) {
+            parseErrors.push({
+              line: entry?.__line ?? index + 1,
+              error: 'Entry is not a JSON object'
+            });
+            return;
+          }
+
+          entry.__line = entry.__line ?? index + 1;
+          entry.__request = getRequestObject(entry);
+          entry.__conversationId = extractConversationId(entry, entry.__request);
+          parsed.push(entry);
+        });
+
+        const analyses = [];
+        const skippedNoConversationId = [];
+        const lastEntryByConversation = new Map();
+
+        parsed.forEach((entry) => {
+          if (!entry.__conversationId) {
+            skippedNoConversationId.push(entry.__line);
+            return;
+          }
+
+          const previousEntry = lastEntryByConversation.get(entry.__conversationId);
+          if (previousEntry) {
+            const analysis = compareRequests(
+              previousEntry,
+              entry,
+              analyses.length + 1,
+              entry.__conversationId
+            );
+            if (analysis.hasDiff) {
+              analyses.push(analysis);
+            }
+          }
+
+          lastEntryByConversation.set(entry.__conversationId, entry);
+        });
+
+        const conversationIds = Array.from(lastEntryByConversation.keys()).sort((left, right) =>
+          left.localeCompare(right)
+        );
+
+        latestAnalysisState = {
+          totalEntries: parsed.length,
+          analyses,
+          parseErrors,
+          skippedNoConversationId,
+          conversationCount: lastEntryByConversation.size,
+          conversationIds
+        };
+
+        syncConversationFilter(conversationIds);
+        renderFromState();
+      }
+
+      function parseInputEntries(text) {
+        const trimmed = text.trim();
+        if (!trimmed) {
+          return { entries: [], errors: [] };
+        }
+
+        const wholeJson = tryParseWholeJson(trimmed);
+        if (wholeJson !== null) {
+          return { entries: wholeJson, errors: [] };
+        }
+
+        const streamJson = parseJsonObjectStream(trimmed);
+        if (streamJson.errors.length === 0 && streamJson.entries.length > 1) {
+          return { entries: streamJson.entries, errors: [] };
+        }
+
+        const lineEntries = [];
+        const lineErrors = [];
+        const lines = text.split(/\r?\n/);
+
+        lines.forEach((line, index) => {
+          if (line.trim().length === 0) {
+            return;
+          }
+
+          try {
+            const parsedLine = JSON.parse(line);
+            if (Array.isArray(parsedLine)) {
+              parsedLine.forEach((entry) => lineEntries.push({ __line: index + 1, __entry: entry }));
+              return;
+            }
+
+            lineEntries.push({ __line: index + 1, __entry: parsedLine });
+          } catch (error) {
+            lineErrors.push({ line: index + 1, error: error.message });
+          }
+        });
+
+        if (lineEntries.length > 0 || lineErrors.length > 0) {
+          return {
+            entries: lineEntries.map((item) => {
+              if (isObject(item.__entry)) {
+                return { ...item.__entry, __line: item.__line };
+              }
+
+              return { __line: item.__line, __invalid: true, __value: item.__entry };
+            }),
+            errors: lineErrors
+          };
+        }
+
+        return {
+          entries: streamJson.entries,
+          errors: streamJson.errors
+        };
+      }
+
+      function tryParseWholeJson(text) {
+        try {
+          const parsed = JSON.parse(text);
+          if (Array.isArray(parsed)) {
+            return parsed;
+          }
+
+          if (isObject(parsed)) {
+            return [parsed];
+          }
+
+          return null;
+        } catch (_error) {
+          return null;
+        }
+      }
+
+      function parseJsonObjectStream(text) {
+        const entries = [];
+        const errors = [];
+        const length = text.length;
+        let index = 0;
+
+        while (index < length) {
+          while (index < length && /[\s,]/.test(text[index])) {
+            index += 1;
+          }
+
+          if (index >= length) {
+            break;
+          }
+
+          const start = index;
+          let depth = 0;
+          let inString = false;
+          let escaped = false;
+          let started = false;
+
+          while (index < length) {
+            const char = text[index];
+
+            if (!started) {
+              if (char === '{' || char === '[') {
+                started = true;
+                depth = 1;
+                index += 1;
+                continue;
+              }
+
+              break;
+            }
+
+            if (inString) {
+              if (escaped) {
+                escaped = false;
+              } else if (char === '\\') {
+                escaped = true;
+              } else if (char === '"') {
+                inString = false;
+              }
+              index += 1;
+              continue;
+            }
+
+            if (char === '"') {
+              inString = true;
+              index += 1;
+              continue;
+            }
+
+            if (char === '{' || char === '[') {
+              depth += 1;
+            } else if (char === '}' || char === ']') {
+              depth -= 1;
+              if (depth === 0) {
+                index += 1;
+                break;
+              }
+            }
+
+            index += 1;
+          }
+
+          const chunk = text.slice(start, index).trim();
+          if (!chunk) {
+            break;
+          }
+
+          try {
+            const parsed = JSON.parse(chunk);
+            if (Array.isArray(parsed)) {
+              entries.push(...parsed);
+            } else {
+              entries.push(parsed);
+            }
+          } catch (error) {
+            errors.push({ line: 1, error: error.message });
+            break;
+          }
+        }
+
+        return { entries, errors };
+      }
+
+      function syncConversationFilter(conversationIds) {
+        if (conversationIds.length <= 1) {
+          conversationFilter.hidden = true;
+          conversationSelect.innerHTML = '';
+          conversationSelectionTitle.textContent = '';
+          return;
+        }
+
+        const previousSelection = conversationSelect.value || 'all';
+        conversationFilter.hidden = false;
+
+        const options = [
+          `<option value="all">All conversations (${conversationIds.length})</option>`,
+          ...conversationIds.map((conversationId) =>
+            `<option value="${escapeHtml(conversationId)}">${escapeHtml(conversationId)}</option>`
+          )
+        ];
+
+        conversationSelect.innerHTML = options.join('');
+        conversationSelect.value = conversationIds.includes(previousSelection)
+          ? previousSelection
+          : 'all';
+      }
+
+      function selectedConversationId() {
+        if (conversationFilter.hidden) {
+          return 'all';
+        }
+
+        return conversationSelect.value || 'all';
+      }
+
+      function renderSelectionTitle(selectedId) {
+        if (conversationFilter.hidden) {
+          conversationSelectionTitle.textContent = '';
+          return;
+        }
+
+        conversationSelectionTitle.textContent =
+          selectedId === 'all'
+            ? 'Showing all conversations'
+            : `Showing conversation: ${selectedId}`;
+      }
+
+      function renderFromState() {
+        const selectedId = selectedConversationId();
+        const filteredAnalyses =
+          selectedId === 'all'
+            ? latestAnalysisState.analyses
+            : latestAnalysisState.analyses.filter(
+                (analysis) => analysis.conversationId === selectedId
+              );
+
+        const filteredConversationCount =
+          selectedId === 'all'
+            ? latestAnalysisState.conversationCount
+            : latestAnalysisState.conversationIds.includes(selectedId)
+              ? 1
+              : 0;
+
+        renderSelectionTitle(selectedId);
+        renderSummary(
+          latestAnalysisState.totalEntries,
+          filteredAnalyses,
+          latestAnalysisState.parseErrors,
+          latestAnalysisState.skippedNoConversationId,
+          filteredConversationCount,
+          selectedId
+        );
+        renderErrors(latestAnalysisState.parseErrors);
+        renderResults(filteredAnalyses, latestAnalysisState.skippedNoConversationId);
+      }
+
+      function compareRequests(previousEntry, currentEntry, pairIndex, conversationId) {
+        const previousRequest = previousEntry.__request;
+        const currentRequest = currentEntry.__request;
+        const previousMessages = normalizeRequestMessages(previousRequest);
+        const currentMessages = normalizeRequestMessages(currentRequest);
+        const previousTools = normalizeRequestTools(previousRequest);
+        const currentTools = normalizeRequestTools(currentRequest);
+        const previousSurface = normalizeCacheSurface(previousEntry, previousRequest);
+        const currentSurface = normalizeCacheSurface(currentEntry, currentRequest);
+
+        const sharedLength = Math.min(previousMessages.length, currentMessages.length);
+        const existingChangedIndexes = [];
+
+        for (let index = 0; index < sharedLength; index += 1) {
+          if (!deepEqual(previousMessages[index], currentMessages[index])) {
+            existingChangedIndexes.push(index);
+          }
+        }
+
+        const appendedCount = Math.max(0, currentMessages.length - previousMessages.length);
+        const removedCount = Math.max(0, previousMessages.length - currentMessages.length);
+        const toolsChanged = !deepEqual(previousTools, currentTools);
+        const cacheSurfaceChanged = !deepEqual(previousSurface, currentSurface);
+        const risks = [];
+
+        for (let index = 1; index < currentMessages.length; index += 1) {
+          const olderChanged = existingChangedIndexes.some((changedIndex) => changedIndex < index);
+          if (olderChanged) {
+            risks.push({
+              scope: `message ${index}`,
+              reason: `An older message changed before index ${index}; this message likely lost prompt-cache reuse.`
+            });
+          }
+        }
+
+        if (toolsChanged) {
+          risks.push({
+            scope: 'all messages',
+            reason: 'The tools object changed between requests.'
+          });
+        }
+
+        if (cacheSurfaceChanged) {
+          risks.push({
+            scope: 'all messages',
+            reason: 'A cache-key-surface field changed (generation config, labels, URL, method, or selected headers).'
+          });
+        }
+
+        const hasDiff =
+          existingChangedIndexes.length > 0 ||
+          appendedCount > 0 ||
+          removedCount > 0 ||
+          toolsChanged ||
+          cacheSurfaceChanged;
+
+        return {
+          pairIndex,
+          conversationId,
+          previousLine: previousEntry.__line,
+          currentLine: currentEntry.__line,
+          previousTimestamp: previousEntry.timestamp ?? null,
+          currentTimestamp: currentEntry.timestamp ?? null,
+          url: currentEntry.url ?? previousEntry.url ?? 'unknown',
+          previousMessages,
+          currentMessages,
+          previousTools,
+          currentTools,
+          previousSurface,
+          currentSurface,
+          existingChangedIndexes,
+          appendedCount,
+          removedCount,
+          toolsChanged,
+          cacheSurfaceChanged,
+          risks,
+          hasDiff
+        };
+      }
+
+      function getRequestObject(entry) {
+        if (!entry || typeof entry !== 'object') {
+          return {};
+        }
+
+        if (isObject(entry.request)) return entry.request;
+        if (isObject(entry.body)) return entry.body;
+        if (isObject(entry.payload)) return entry.payload;
+        if (isObject(entry.data?.request)) return entry.data.request;
+
+        return entry;
+      }
+
+      function extractConversationId(entry, request) {
+        return normalizeConversationId(
+          pickObjectValue(request, [
+            'session_id',
+            'sessionId',
+            'prompt_cache_key',
+            'promptCacheKey',
+            'conversation_id',
+            'conversationId',
+            'cached_content',
+            'cachedContent'
+          ]) ??
+            pickObjectValue(request?.labels, [
+              'conversation_id',
+              'conversationId',
+              'session_id',
+              'sessionId'
+            ]) ??
+            pickObjectValue(request?.metadata, ['conversation_id', 'conversationId']) ??
+            request?.conversation?.id ??
+            pickObjectValue(entry, ['conversation_id', 'conversationId']) ??
+            pickObjectValue(entry?.metadata, ['conversation_id', 'conversationId'])
+        );
+      }
+
+      function normalizeConversationId(value) {
+        if (value === null || value === undefined) {
+          return null;
+        }
+
+        const text = String(value).trim();
+        return text.length > 0 ? text : null;
+      }
+
+      function normalizeRequestMessages(request) {
+        const out = [];
+        if (!isObject(request)) {
+          return out;
+        }
+
+        const systemInstruction = request.system_instruction ?? request.systemInstruction;
+        if (systemInstruction) {
+          out.push(normalizeMessage('system', systemInstruction));
+        }
+
+        if (Array.isArray(request.system)) {
+          request.system.forEach((message) => out.push(normalizeMessage('system', message)));
+        }
+
+        if (Array.isArray(request.messages)) {
+          request.messages.forEach((message) => {
+            out.push(normalizeMessage(message?.role ?? 'unknown', message));
+          });
+        }
+
+        if (Array.isArray(request.contents)) {
+          request.contents.forEach((message) => {
+            out.push(normalizeMessage(message?.role ?? 'unknown', message));
+          });
+        }
+
+        if (Array.isArray(request.input)) {
+          request.input.forEach((message) => {
+            out.push(normalizeMessage(message?.role ?? message?.type ?? 'unknown', message));
+          });
+        }
+
+        if (typeof request.prompt === 'string') {
+          out.push(normalizeMessage('prompt', request.prompt));
+        }
+
+        return out;
+      }
+
+      function normalizeRequestTools(request) {
+        if (!isObject(request)) {
+          return null;
+        }
+
+        const tools = request.tools;
+        const toolConfig = request.tool_config ?? request.toolConfig ?? null;
+        if (tools === undefined && toolConfig === null) {
+          return null;
+        }
+
+        return sortKeys({
+          tools: tools ?? null,
+          toolConfig
+        });
+      }
+
+      function normalizeCacheSurface(entry, request) {
+        return sortKeys({
+          method: entry.method ?? null,
+          url: entry.url ?? null,
+          model: extractModelFromUrl(entry.url ?? null),
+          generationConfig: request.generation_config ?? request.generationConfig ?? null,
+          labels: request.labels ?? null,
+          cachedContent: request.cached_content ?? request.cachedContent ?? null,
+          selectedHeaders: pickHeaders(entry.headers)
+        });
+      }
+
+      function pickHeaders(headers) {
+        if (!isObject(headers)) {
+          return null;
+        }
+
+        const selected = {};
+        [
+          'content-type',
+          'anthropic-version',
+          'anthropic-beta',
+          'openai-beta',
+          'x-vertex-ai-llm-request-type',
+          'x-vertex-ai-llm-shared-request-type'
+        ].forEach((key) => {
+          if (headers[key] !== undefined) {
+            selected[key] = headers[key];
+          }
+        });
+
+        return Object.keys(selected).length > 0 ? selected : null;
+      }
+
+      function extractModelFromUrl(url) {
+        if (typeof url !== 'string') {
+          return null;
+        }
+
+        const match = url.match(/\/models\/([^:?/]+)/);
+        return match ? match[1] : null;
+      }
+
+      function normalizeMessage(role, raw) {
+        return {
+          role: role ?? 'unknown',
+          content: projectMessageContent(raw)
+        };
+      }
+
+      function projectMessageContent(raw) {
+        return normalizeJsonValue(raw);
+      }
+
+      function normalizeJsonValue(value, depth = 0) {
+        if (depth > 10) {
+          return value;
+        }
+
+        if (typeof value === 'string') {
+          const parsed = tryParseJsonString(value);
+          return parsed === null ? value : normalizeJsonValue(parsed, depth + 1);
+        }
+
+        if (Array.isArray(value)) {
+          return value.map((item) => normalizeJsonValue(item, depth + 1));
+        }
+
+        if (!isObject(value)) {
+          return value;
+        }
+
+        return Object.entries(value).reduce((out, [key, itemValue]) => {
+          out[key] = normalizeJsonValue(itemValue, depth + 1);
+          return out;
+        }, {});
+      }
+
+      function tryParseJsonString(value) {
+        if (typeof value !== 'string') {
+          return null;
+        }
+
+        const text = value.trim();
+        const looksLikeJson =
+          (text.startsWith('{') && text.endsWith('}')) ||
+          (text.startsWith('[') && text.endsWith(']'));
+
+        if (!looksLikeJson) {
+          return null;
+        }
+
+        try {
+          return JSON.parse(text);
+        } catch (_error) {
+          return null;
+        }
+      }
+
+      function pickObjectValue(object, keys) {
+        if (!isObject(object)) {
+          return null;
+        }
+
+        for (const key of keys) {
+          if (Object.prototype.hasOwnProperty.call(object, key)) {
+            const value = object[key];
+            if (value !== null && value !== undefined && String(value).trim() !== '') {
+              return value;
+            }
+          }
+        }
+
+        return null;
+      }
+
+      function deepEqual(left, right) {
+        return stableStringify(left) === stableStringify(right);
+      }
+
+      function stableStringify(value) {
+        return JSON.stringify(sortKeys(normalizeJsonValue(value)), null, 2);
+      }
+
+      function sortKeys(value) {
+        if (Array.isArray(value)) {
+          return value.map(sortKeys);
+        }
+
+        if (!isObject(value)) {
+          return value;
+        }
+
+        return Object.keys(value)
+          .sort()
+          .reduce((out, key) => {
+            out[key] = sortKeys(value[key]);
+            return out;
+          }, {});
+      }
+
+      function isObject(value) {
+        return value !== null && typeof value === 'object' && !Array.isArray(value);
+      }
+
+      function renderSummary(
+        totalEntries,
+        analyses,
+        parseErrors,
+        skippedNoConversationId,
+        conversationCount,
+        selectedConversation
+      ) {
+        const riskyPairs = analyses.filter((analysis) => analysis.risks.length > 0).length;
+        const messageChanges = analyses.filter((analysis) => analysis.existingChangedIndexes.length > 0).length;
+        const surfaceChanges = analyses.filter((analysis) => analysis.cacheSurfaceChanged).length;
+        const selectedConversationLabel =
+          selectedConversation === 'all' ? 'All conversations' : selectedConversation;
+
+        summary.innerHTML = `
+          <h2 id="summary-heading" class="panel-title">Summary</h2>
+          <div class="summary-grid">
+            <dl class="summary-card">
+              <dt class="summary-label">Parsed entries</dt>
+              <dd class="summary-value">${totalEntries}</dd>
+            </dl>
+            <dl class="summary-card">
+              <dt class="summary-label">Conversation ids</dt>
+              <dd class="summary-value">${conversationCount}</dd>
+            </dl>
+            <dl class="summary-card">
+              <dt class="summary-label">Selected conversation</dt>
+              <dd class="summary-value">${escapeHtml(selectedConversationLabel)}</dd>
+            </dl>
+            <dl class="summary-card">
+              <dt class="summary-label">Diff pairs shown</dt>
+              <dd class="summary-value">${analyses.length}</dd>
+            </dl>
+            <dl class="summary-card">
+              <dt class="summary-label">Risky pairs</dt>
+              <dd class="summary-value">${riskyPairs}</dd>
+            </dl>
+            <dl class="summary-card">
+              <dt class="summary-label">Message prefix changes</dt>
+              <dd class="summary-value">${messageChanges}</dd>
+            </dl>
+            <dl class="summary-card">
+              <dt class="summary-label">Cache-surface changes</dt>
+              <dd class="summary-value">${surfaceChanges}</dd>
+            </dl>
+            <dl class="summary-card">
+              <dt class="summary-label">Skipped (no conversation id)</dt>
+              <dd class="summary-value">${skippedNoConversationId.length}</dd>
+            </dl>
+            <dl class="summary-card">
+              <dt class="summary-label">Parse errors</dt>
+              <dd class="summary-value">${parseErrors.length}</dd>
+            </dl>
+          </div>
+        `;
+      }
+
+      function renderErrors(parseErrors) {
+        if (parseErrors.length === 0) {
+          errors.hidden = true;
+          errors.innerHTML = '';
+          return;
+        }
+
+        errors.hidden = false;
+        errors.innerHTML = `
+          <h2 id="errors-heading" class="panel-title">Parse errors</h2>
+          <ul class="error-list">
+            ${parseErrors
+              .map((item) => `<li>Line ${item.line}: ${escapeHtml(item.error)}</li>`)
+              .join('')}
+          </ul>
+        `;
+      }
+
+      function renderResults(analyses, skippedNoConversationId) {
+        if (analyses.length === 0) {
+          results.innerHTML = `
+            <section class="panel">
+              <div class="empty">No differences found in comparable request pairs.</div>
+              ${renderSkipped(skippedNoConversationId)}
+            </section>
+          `;
+          return;
+        }
+
+        const skippedSection = renderSkipped(skippedNoConversationId);
+        const pairSections = analyses.map((analysis) => renderPair(analysis)).join('');
+        results.innerHTML = `${skippedSection}${pairSections}`;
+      }
+
+      function renderSkipped(skippedNoConversationId) {
+        if (skippedNoConversationId.length === 0) {
+          return '';
+        }
+
+        return `
+          <aside class="panel" aria-labelledby="skipped-heading">
+            <h3 id="skipped-heading" class="panel-title">Skipped (no conversation id)</h3>
+            <p>These JSONL lines were ignored because no stable conversation id could be extracted: ${skippedNoConversationId.join(', ')}</p>
+          </aside>
+        `;
+      }
+
+      function renderPair(analysis) {
+        const badges = [
+          analysis.existingChangedIndexes.length > 0
+            ? `<span class="badge badge-danger">Changed older messages: ${analysis.existingChangedIndexes.join(', ')}</span>`
+            : `<span class="badge badge-success">No older message changes</span>`,
+          analysis.appendedCount > 0
+            ? `<span class="badge badge-warning">Appended at end: ${analysis.appendedCount}</span>`
+            : '',
+          analysis.removedCount > 0
+            ? `<span class="badge badge-warning">Removed from tail: ${analysis.removedCount}</span>`
+            : '',
+          analysis.toolsChanged
+            ? `<span class="badge badge-danger">Tools changed</span>`
+            : '<span class="badge badge-success">Tools unchanged</span>',
+          analysis.cacheSurfaceChanged
+            ? `<span class="badge badge-danger">Cache surface changed</span>`
+            : '<span class="badge badge-success">Cache surface unchanged</span>'
+        ]
+          .filter(Boolean)
+          .map((badge) => `<li>${badge}</li>`)
+          .join('');
+
+        const risks = analysis.risks.length
+          ? `<ul class="risk-list">${analysis.risks
+              .map((risk) => `<li><strong>${escapeHtml(risk.scope)}:</strong> ${escapeHtml(risk.reason)}</li>`)
+              .join('')}</ul>`
+          : '<p class="empty">No prompt-cache risk detected beyond end-appended message growth.</p>';
+
+        const messageDiff =
+          analysis.existingChangedIndexes.length > 0 || analysis.appendedCount > 0 || analysis.removedCount > 0
+            ? renderDiffSection('Message diff', analysis.previousMessages, analysis.currentMessages)
+            : '';
+
+        const toolsDiff = analysis.toolsChanged
+          ? renderDiffSection('Tools diff', analysis.previousTools, analysis.currentTools)
+          : '';
+
+        const cacheSurfaceDiff = analysis.cacheSurfaceChanged
+          ? renderDiffSection('Cache-key-surface diff', analysis.previousSurface, analysis.currentSurface)
+          : '';
+
+        return `
+          <article class="pair" aria-labelledby="pair-title-${analysis.pairIndex}">
+            <header class="pair-header">
+              <div>
+                <h3 id="pair-title-${analysis.pairIndex}">Pair ${analysis.pairIndex}</h3>
+                <p>Conversation <code>${escapeHtml(analysis.conversationId)}</code></p>
+              </div>
+              <p class="badge ${analysis.risks.length ? 'badge-danger' : 'badge-success'}">
+                ${analysis.risks.length ? `${analysis.risks.length} risk signal(s)` : 'No risk signal'}
+              </p>
+            </header>
+
+            <dl class="pair-meta">
+              <div class="meta-item"><dt>Previous line</dt><dd>${analysis.previousLine}</dd></div>
+              <div class="meta-item"><dt>Current line</dt><dd>${analysis.currentLine}</dd></div>
+              <div class="meta-item"><dt>Previous timestamp</dt><dd>${escapeHtml(analysis.previousTimestamp ?? 'n/a')}</dd></div>
+              <div class="meta-item"><dt>Current timestamp</dt><dd>${escapeHtml(analysis.currentTimestamp ?? 'n/a')}</dd></div>
+              <div class="meta-item"><dt>URL</dt><dd>${escapeHtml(analysis.url)}</dd></div>
+            </dl>
+
+            <ul class="badge-row">${badges}</ul>
+            ${risks}
+            ${messageDiff}
+            ${toolsDiff}
+            ${cacheSurfaceDiff}
+          </article>
+        `;
+      }
+
+      function renderDiffSection(title, previousValue, currentValue) {
+        return `
+          <section class="section" aria-label="${escapeHtml(title)}">
+            <h4 class="section-title">${escapeHtml(title)}</h4>
+            ${renderSideBySideDiffTable(previousValue, currentValue)}
+          </section>
+        `;
+      }
+
+      function renderSideBySideDiffTable(previousValue, currentValue) {
+        const previousText = `${stableStringify(previousValue)}\n`;
+        const currentText = `${stableStringify(currentValue)}\n`;
+
+        if (previousText === currentText) {
+          return '<div class="empty">No changed lines in this section.</div>';
+        }
+
+        if (window.Diff?.createTwoFilesPatch && window.Diff2Html?.html) {
+          const patch = window.Diff.createTwoFilesPatch(
+            'previous',
+            'current',
+            previousText,
+            currentText,
+            'previous',
+            'current',
+            {
+              context: 1
+            }
+          );
+
+          const html = window.Diff2Html.html(patch, {
+            drawFileList: false,
+            matching: 'lines',
+            outputFormat: 'side-by-side',
+            renderNothingWhenEmpty: false,
+            matchingMaxComparisons: 2500,
+            maxLineLengthHighlight: false
+          });
+
+          return `<div class="d2h-wrapper">${html}</div>`;
+        }
+
+        return renderFallbackSideBySideDiffTable(previousText, currentText);
+      }
+
+      function renderFallbackSideBySideDiffTable(previousText, currentText) {
+        const previousLines = previousText.split('\n');
+        const currentLines = currentText.split('\n');
+        const rowCount = Math.max(previousLines.length, currentLines.length);
+        const rows = [];
+
+        for (let index = 0; index < rowCount; index += 1) {
+          const previousLine = previousLines[index] ?? null;
+          const currentLine = currentLines[index] ?? null;
+          let rowClass = '';
+
+          if (previousLine === currentLine) {
+            continue;
+          }
+
+          if (previousLine === null) {
+            rowClass = 'row-add';
+          } else if (currentLine === null) {
+            rowClass = 'row-remove';
+          } else {
+            rowClass = 'row-change';
+          }
+
+          rows.push(`
+            <tr class="${rowClass}">
+              <td class="line-cell">${previousLine === null ? '' : index + 1}</td>
+              <td class="code-cell">${escapeHtml(previousLine ?? '')}</td>
+              <td class="line-cell">${currentLine === null ? '' : index + 1}</td>
+              <td class="code-cell">${escapeHtml(currentLine ?? '')}</td>
+            </tr>
+          `);
+        }
+
+        if (rows.length === 0) {
+          return '<div class="empty">No changed lines in this section.</div>';
+        }
+
+        return `
+          <table class="diff-table">
+            <thead>
+              <tr>
+                <th class="line-cell">Prev #</th>
+                <th>Previous</th>
+                <th class="line-cell">Curr #</th>
+                <th>Current</th>
+              </tr>
+            </thead>
+            <tbody>${rows.join('')}</tbody>
+          </table>
+        `;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+    </script>
+  </body>
+</html>

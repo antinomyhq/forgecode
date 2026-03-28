@@ -791,6 +791,10 @@ mod env_tests {
             Ok(())
         }
 
+        async fn append(&self, path: &std::path::Path, content: Bytes) -> anyhow::Result<()> {
+            self.write(path, content).await
+        }
+
         async fn write_temp(
             &self,
             _prefix: &str,
@@ -1264,6 +1268,10 @@ mod env_tests {
         #[async_trait::async_trait]
         impl FileWriterInfra for CustomMockInfra {
             async fn write(&self, _path: &std::path::Path, _content: Bytes) -> anyhow::Result<()> {
+                Ok(())
+            }
+
+            async fn append(&self, _path: &std::path::Path, _content: Bytes) -> anyhow::Result<()> {
                 Ok(())
             }
 

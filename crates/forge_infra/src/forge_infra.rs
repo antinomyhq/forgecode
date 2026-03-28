@@ -148,6 +148,10 @@ impl FileWriterInfra for ForgeInfra {
         self.file_write_service.write(path, contents).await
     }
 
+    async fn append(&self, path: &Path, contents: Bytes) -> anyhow::Result<()> {
+        self.file_write_service.append(path, contents).await
+    }
+
     async fn write_temp(&self, prefix: &str, ext: &str, content: &str) -> anyhow::Result<PathBuf> {
         self.file_write_service
             .write_temp(prefix, ext, content)

@@ -4,12 +4,14 @@ use std::time::Duration;
 
 use anyhow::Context;
 use bytes::Bytes;
+use chrono::Utc;
 use forge_app::HttpInfra;
 use forge_domain::{Environment, TlsBackend, TlsVersion};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest::redirect::Policy;
 use reqwest::{Certificate, Client, Response, StatusCode, Url};
 use reqwest_eventsource::{EventSource, RequestBuilderExt};
+use serde_json::{Map, Value, json};
 use tracing::{debug, warn};
 
 const VERSION: &str = match option_env!("APP_VERSION") {
@@ -118,7 +120,7 @@ impl<F: forge_app::FileWriterInfra + 'static> ForgeHttpInfra<F> {
         let mut request_headers = self.headers(headers);
         request_headers.insert("Content-Type", HeaderValue::from_static("application/json"));
 
-        self.write_debug_request(&body);
+        self.write_debug_request("POST", url, &request_headers, &body);
 
         self.execute_request("POST", url, |client| {
             client.post(url.clone()).headers(request_headers).body(body)
@@ -190,7 +192,7 @@ impl<F: forge_app::FileWriterInfra + 'static> ForgeHttpInfra<F> {
     }
 
     fn sanitize_headers(headers: &HeaderMap) -> HeaderMap {
-        let sensitive_headers = [AUTHORIZATION.as_str()];
+        let sensitive_headers = [AUTHORIZATION.as_str(), "x-goog-api-key"];
         headers
             .iter()
             .map(|(name, value)| {
@@ -207,13 +209,39 @@ impl<F: forge_app::FileWriterInfra + 'static> ForgeHttpInfra<F> {
 }
 
 impl<F: forge_app::FileWriterInfra + 'static> ForgeHttpInfra<F> {
-    fn write_debug_request(&self, body: &Bytes) {
+    fn write_debug_request(&self, method: &str, url: &Url, headers: &HeaderMap, body: &Bytes) {
         if let Some(debug_path) = &self.env.debug_requests {
             let file_writer = self.file.clone();
-            let body_clone = body.clone();
             let debug_path = debug_path.clone();
+            let method = method.to_string();
+            let url = url.clone();
+            let headers = Self::sanitize_headers(headers);
+            let body = body.clone();
+
             tokio::spawn(async move {
-                let _ = file_writer.write(&debug_path, body_clone).await;
+                let request = serde_json::from_slice::<Value>(&body)
+                    .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&body).into_owned()));
+
+                let headers = headers
+                    .iter()
+                    .map(|(name, value)| {
+                        let value = value.to_str().unwrap_or("[INVALID]").to_string();
+                        (name.as_str().to_string(), Value::String(value))
+                    })
+                    .collect::<Map<String, Value>>();
+
+                let entry = json!({
+                    "timestamp": Utc::now().to_rfc3339(),
+                    "method": method,
+                    "url": url,
+                    "headers": headers,
+                    "request": request,
+                });
+
+                if let Ok(mut line) = serde_json::to_vec(&entry) {
+                    line.push(b'\n');
+                    let _ = file_writer.append(&debug_path, Bytes::from(line)).await;
+                }
             });
         }
     }
@@ -227,7 +255,7 @@ impl<F: forge_app::FileWriterInfra + 'static> ForgeHttpInfra<F> {
         let mut request_headers = self.headers(headers);
         request_headers.insert("Content-Type", HeaderValue::from_static("application/json"));
 
-        self.write_debug_request(&body);
+        self.write_debug_request("POST", url, &request_headers, &body);
 
         self.client
             .post(url.clone())
@@ -282,9 +310,13 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
+    use bytes::Bytes;
     use fake::{Fake, Faker};
     use forge_app::FileWriterInfra;
     use forge_domain::{Environment, HttpConfig};
+    use pretty_assertions::assert_eq;
+    use reqwest::header::HeaderValue;
+    use serde_json::Value;
     use tokio::sync::Mutex;
 
     use super::*;
@@ -299,7 +331,7 @@ mod tests {
             Self { writes: Arc::new(Mutex::new(Vec::new())) }
         }
 
-        async fn get_writes(&self) -> Vec<(PathBuf, Bytes)> {
+        async fn writes(&self) -> Vec<(PathBuf, Bytes)> {
             self.writes.lock().await.clone()
         }
     }
@@ -307,6 +339,14 @@ mod tests {
     #[async_trait::async_trait]
     impl FileWriterInfra for MockFileWriter {
         async fn write(&self, path: &std::path::Path, contents: Bytes) -> anyhow::Result<()> {
+            self.writes
+                .lock()
+                .await
+                .push((path.to_path_buf(), contents));
+            Ok(())
+        }
+
+        async fn append(&self, path: &std::path::Path, contents: Bytes) -> anyhow::Result<()> {
             self.writes
                 .lock()
                 .await
@@ -328,139 +368,89 @@ mod tests {
         Environment { debug_requests, http: HttpConfig::default(), ..Faker.fake() }
     }
 
+    async fn wait_for_background_write() {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+
+    fn parse_jsonl_entry(contents: &Bytes) -> Value {
+        let fixture = String::from_utf8(contents.to_vec()).unwrap();
+        let actual = fixture.trim_end();
+        let expected: Value = serde_json::from_str(actual).unwrap();
+        expected
+    }
+
     #[tokio::test]
     async fn test_debug_requests_none_does_not_write() {
-        let file_writer = MockFileWriter::new();
-        let env = create_test_env(None);
-        let http = ForgeHttpInfra::new(env, Arc::new(file_writer.clone()));
-
-        let body = Bytes::from("test request body");
+        let fixture = MockFileWriter::new();
+        let http = ForgeHttpInfra::new(create_test_env(None), Arc::new(fixture.clone()));
         let url = Url::parse("https://api.test.com/messages").unwrap();
 
-        // Attempt to create eventsource (which triggers debug write if enabled)
-        let _ = http.eventsource(&url, None, body).await;
+        let _actual = http
+            .eventsource(&url, None, Bytes::from("{\"ok\":true}"))
+            .await;
+        wait_for_background_write().await;
 
-        // Give async task time to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        let actual = fixture.writes().await;
+        let expected = Vec::<(PathBuf, Bytes)>::new();
+        assert_eq!(actual, expected);
+    }
 
-        let writes = file_writer.get_writes().await;
+    #[tokio::test]
+    async fn test_eventsource_debug_requests_append_jsonl_entry() {
+        let fixture = MockFileWriter::new();
+        let debug_path = PathBuf::from("/tmp/forge-test/debug.jsonl");
+        let http = ForgeHttpInfra::new(
+            create_test_env(Some(debug_path.clone())),
+            Arc::new(fixture.clone()),
+        );
+        let url = Url::parse("https://api.test.com/messages").unwrap();
+        let body = Bytes::from_static(br#"{"request":"body"}"#);
+
+        let _actual = http.eventsource(&url, None, body).await;
+        wait_for_background_write().await;
+
+        let actual = fixture.writes().await;
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].0, debug_path);
+
+        let actual = parse_jsonl_entry(&actual[0].1);
+        assert_eq!(actual["method"], Value::String("POST".to_string()));
+        assert_eq!(actual["url"], Value::String(url.to_string()));
+        assert_eq!(actual["request"], serde_json::json!({"request": "body"}));
         assert_eq!(
-            writes.len(),
-            0,
-            "No files should be written when debug_requests is None"
+            actual["headers"]["content-type"],
+            Value::String("application/json".to_string())
         );
     }
 
     #[tokio::test]
-    async fn test_debug_requests_with_valid_path() {
-        let file_writer = MockFileWriter::new();
-        let debug_path = PathBuf::from("/tmp/forge-test/debug.json");
-        let env = create_test_env(Some(debug_path.clone()));
-        let http = ForgeHttpInfra::new(env, Arc::new(file_writer.clone()));
-
-        let body = Bytes::from("test request body");
-        let url = Url::parse("https://api.test.com/messages").unwrap();
-
-        let _ = http.eventsource(&url, None, body.clone()).await;
-
-        // Give async task time to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-        let writes = file_writer.get_writes().await;
-        assert_eq!(writes.len(), 1, "Should write one file");
-        assert_eq!(writes[0].0, debug_path);
-        assert_eq!(writes[0].1, body);
-    }
-
-    #[tokio::test]
-    async fn test_debug_requests_with_relative_path() {
-        let file_writer = MockFileWriter::new();
-        let debug_path = PathBuf::from("./debug/requests.json");
-        let env = create_test_env(Some(debug_path.clone()));
-        let http = ForgeHttpInfra::new(env, Arc::new(file_writer.clone()));
-
-        let body = Bytes::from("test request body");
-        let url = Url::parse("https://api.test.com/messages").unwrap();
-
-        let _ = http.eventsource(&url, None, body.clone()).await;
-
-        // Give async task time to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-        let writes = file_writer.get_writes().await;
-        assert_eq!(writes.len(), 1, "Should write one file");
-        assert_eq!(writes[0].0, debug_path);
-        assert_eq!(writes[0].1, body);
-    }
-
-    #[tokio::test]
-    async fn test_debug_requests_post_none_does_not_write() {
-        let file_writer = MockFileWriter::new();
-        let env = create_test_env(None);
-        let http = ForgeHttpInfra::new(env, Arc::new(file_writer.clone()));
-
-        let body = Bytes::from("test request body");
+    async fn test_post_debug_requests_append_jsonl_entry_and_redact_headers() {
+        let fixture = MockFileWriter::new();
+        let debug_path = PathBuf::from("/tmp/forge-test/debug-post.jsonl");
+        let http = ForgeHttpInfra::new(
+            create_test_env(Some(debug_path.clone())),
+            Arc::new(fixture.clone()),
+        );
         let url = Url::parse("http://127.0.0.1:9/responses").unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert("x-goog-api-key", HeaderValue::from_static("secret"));
 
-        let _ = http.post(&url, None, body).await;
+        let _actual = http
+            .post(&url, Some(headers), Bytes::from("not-json"))
+            .await;
+        wait_for_background_write().await;
 
-        // Give async task time to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        let actual = fixture.writes().await;
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].0, debug_path);
 
-        let writes = file_writer.get_writes().await;
+        let actual = parse_jsonl_entry(&actual[0].1);
+        assert_eq!(actual["method"], Value::String("POST".to_string()));
+        assert_eq!(actual["url"], Value::String(url.to_string()));
+        assert_eq!(actual["request"], Value::String("not-json".to_string()));
         assert_eq!(
-            writes.len(),
-            0,
-            "No files should be written for POST when debug_requests is None"
+            actual["headers"]["x-goog-api-key"],
+            Value::String("[REDACTED]".to_string())
         );
-    }
-
-    #[tokio::test]
-    async fn test_debug_requests_post_writes_body() {
-        let file_writer = MockFileWriter::new();
-        let debug_path = PathBuf::from("/tmp/forge-test/debug-post.json");
-        let env = create_test_env(Some(debug_path.clone()));
-        let http = ForgeHttpInfra::new(env, Arc::new(file_writer.clone()));
-
-        let body = Bytes::from("test request body");
-        let url = Url::parse("http://127.0.0.1:9/responses").unwrap();
-
-        let _ = http.post(&url, None, body.clone()).await;
-
-        // Give async task time to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-        let writes = file_writer.get_writes().await;
-        assert_eq!(
-            writes.len(),
-            1,
-            "Should write one file for POST when debug_requests is set"
-        );
-        assert_eq!(writes[0].0, debug_path);
-        assert_eq!(writes[0].1, body);
-    }
-
-    #[tokio::test]
-    async fn test_debug_requests_fallback_on_dir_creation_failure() {
-        let file_writer = MockFileWriter::new();
-        // Use a path with a parent that doesn't exist and can't be created
-        // (in practice, this would be a permission issue)
-        let debug_path = PathBuf::from("test_debug.json");
-        let env = create_test_env(Some(debug_path.clone()));
-        let http = ForgeHttpInfra::new(env, Arc::new(file_writer.clone()));
-
-        let body = Bytes::from("test request body");
-        let url = Url::parse("https://api.test.com/messages").unwrap();
-
-        let _ = http.eventsource(&url, None, body.clone()).await;
-
-        // Give async task time to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-        let writes = file_writer.get_writes().await;
-        // Should write to debug_path (no parent dir needed)
-        assert_eq!(writes.len(), 1, "Should write one file");
-        assert_eq!(writes[0].0, debug_path);
-        assert_eq!(writes[0].1, body);
     }
 }
