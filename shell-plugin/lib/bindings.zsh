@@ -29,3 +29,14 @@ bindkey '^M' forge-accept-line
 bindkey '^J' forge-accept-line
 # Update the Tab binding to use the new completion widget
 bindkey '^I' forge-completion  # Tab for both @ and :command completion
+
+# Fix: zsh-vi-mode plugin compatibility
+# When zsh-vi-mode (jeffreytse/zsh-vi-mode) is active, Enter in vi-command mode
+# does not trigger forge's colon commands. Fix by also binding Enter in vicmd.
+# Detects both zsh-vi-mode plugin ($ZVM_MODE) and native vi mode (bindkey -v).
+if [[ -n "$ZVM_MODE" ]] || bindkey -lL main 2>/dev/null | grep -q "bindkey -A viins main\|bindkey -A vicmd main"; then
+    bindkey -M vicmd '^M' forge-accept-line
+    bindkey -M vicmd '^J' forge-accept-line
+    # Also bind Tab in vicmd for @ and :command completion
+    bindkey -M vicmd '^I' forge-completion
+fi
