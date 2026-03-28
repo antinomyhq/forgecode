@@ -402,3 +402,30 @@ expression: tools
   "title": "TodoRead",
   "type": "object"
 }
+{
+  "title": "TaskInput",
+  "description": "Input structure for the Task tool - delegates work to specialized agents",
+  "type": "object",
+  "properties": {
+    "agent_id": {
+      "description": "The ID of the specialized agent to delegate to (e.g., \"sage\", \"forge\",\n\"muse\")",
+      "type": "string"
+    },
+    "session_id": {
+      "description": "Optional session ID to continue an existing agent session. If not\nprovided, a new stateless session will be created. Use this to\nmaintain context across multiple task invocations with the same\nagent.",
+      "type": "string",
+      "nullable": true
+    },
+    "tasks": {
+      "description": "A list of clear and detailed descriptions of the tasks to be performed\nby the agent in parallel. Provide sufficient context and specific\nrequirements to enable the agent to understand and execute the work\naccurately.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "tasks",
+    "agent_id"
+  ]
+}

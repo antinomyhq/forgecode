@@ -36,12 +36,16 @@ impl<S: Services> AgentExecutor<S> {
     }
 
     /// Executes an agent tool call by creating a new chat request for the
-    /// specified agent.
+    /// Executes an agent tool call by creating a new chat request for the
+    /// specified agent. If conversation_id is provided, the agent will reuse
+    /// that conversation, maintaining context across invocations. Otherwise,
+    /// a new conversation is created.
     pub async fn execute(
         &self,
         agent_id: AgentId,
         task: String,
         ctx: &ToolCallContext,
+        conversation_id: Option<String>,
     ) -> anyhow::Result<ToolOutput> {
         ctx.send_tool_input(
             TitleFormat::debug(format!(
@@ -52,13 +56,23 @@ impl<S: Services> AgentExecutor<S> {
         )
         .await?;
 
-        // Create a new conversation for agent execution
-        let conversation = Conversation::generate().title(task.clone());
-        self.services
-            .conversation_service()
-            .upsert_conversation(conversation.clone())
-            .await?;
-        // Execute the request through the ForgeApp
+        // Reuse existing conversation if provided, otherwise create a new one
+        let conversation = if let Some(cid) = conversation_id {
+            let conversation_id = forge_domain::ConversationId::parse(&cid)
+                .map_err(|_| Error::ConversationNotFound { id: cid.clone() })?;
+            self.services
+                .conversation_service()
+                .find_conversation(&conversation_id)
+                .await?
+                .ok_or(Error::ConversationNotFound { id: cid })?
+        } else {
+            let conversation = Conversation::generate().title(task.clone());
+            self.services
+                .conversation_service()
+                .upsert_conversation(conversation.clone())
+                .await?;
+            conversation
+        };
         let app = crate::ForgeApp::new(self.services.clone());
         let mut response_stream = app
             .chat(

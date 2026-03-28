@@ -125,6 +125,9 @@ impl FormatContent for ToolCatalog {
                     .into(),
             ),
             ToolCatalog::TodoRead(_) => Some(TitleFormat::debug("Read Todos").into()),
+            ToolCatalog::Task(input) => {
+                Some(TitleFormat::debug("Task").sub_title(&input.agent_id).into())
+            }
         }
     }
 }

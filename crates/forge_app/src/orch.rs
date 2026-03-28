@@ -6,6 +6,7 @@ use async_recursion::async_recursion;
 use derive_setters::Setters;
 use forge_domain::{Agent, *};
 use forge_template::Element;
+use futures::future::join_all;
 use tokio::sync::Notify;
 use tracing::warn;
 
@@ -53,13 +54,39 @@ impl<S: AgentService> Orchestrator<S> {
 
     // Helper function to get all tool results from a vector of tool calls
     #[async_recursion]
-    async fn execute_tool_calls<'a>(
+    async fn execute_tool_calls(
         &mut self,
         tool_calls: &[ToolCallFull],
         tool_context: &ToolCallContext,
     ) -> anyhow::Result<Vec<(ToolCallFull, ToolResult)>> {
-        // Always process tool calls sequentially
-        let mut tool_call_records = Vec::with_capacity(tool_calls.len());
+        let task_tool_name = ToolKind::Task.name();
+
+        // Use a case-insensitive comparison since the model may send "Task" or "task".
+        let is_task = |tc: &ToolCallFull| {
+            tc.name
+                .as_str()
+                .eq_ignore_ascii_case(task_tool_name.as_str())
+        };
+
+        // Partition into task tool calls (run in parallel) and all others (run
+        // sequentially). Use a case-insensitive comparison since the model may
+        // send "Task" or "task".
+        let is_task_call =
+            |tc: &&ToolCallFull| tc.name.as_str().to_lowercase() == task_tool_name.as_str();
+        let (task_calls, other_calls): (Vec<_>, Vec<_>) = tool_calls.iter().partition(is_task_call);
+
+        // Execute task tool calls in parallel — mirrors how direct agent-as-tool calls
+        // work.
+        let task_results: Vec<(ToolCallFull, ToolResult)> = join_all(
+            task_calls
+                .iter()
+                .map(|tc| self.services.call(&self.agent, tool_context, (*tc).clone())),
+        )
+        .await
+        .into_iter()
+        .zip(task_calls.iter())
+        .map(|(result, tc)| ((*tc).clone(), result))
+        .collect();
 
         let system_tools = self
             .tool_definitions
@@ -67,13 +94,17 @@ impl<S: AgentService> Orchestrator<S> {
             .map(|tool| &tool.name)
             .collect::<HashSet<_>>();
 
-        for tool_call in tool_calls {
+        // Process non-task tool calls sequentially (preserving UI notifier handshake
+        // and hooks).
+        let mut other_results: Vec<(ToolCallFull, ToolResult)> =
+            Vec::with_capacity(other_calls.len());
+        for tool_call in &other_calls {
             // Send the start notification for system tools and not agent as a tool
             let is_system_tool = system_tools.contains(&tool_call.name);
             if is_system_tool {
                 let notifier = Arc::new(Notify::new());
                 self.send(ChatResponse::ToolCallStart {
-                    tool_call: tool_call.clone(),
+                    tool_call: (*tool_call).clone(),
                     notifier: notifier.clone(),
                 })
                 .await?;
@@ -87,7 +118,7 @@ impl<S: AgentService> Orchestrator<S> {
             let toolcall_start_event = LifecycleEvent::ToolcallStart(EventData::new(
                 self.agent.clone(),
                 self.agent.model.clone(),
-                ToolcallStartPayload::new(tool_call.clone()),
+                ToolcallStartPayload::new((*tool_call).clone()),
             ));
             self.hook
                 .handle(&toolcall_start_event, &mut self.conversation)
@@ -96,14 +127,14 @@ impl<S: AgentService> Orchestrator<S> {
             // Execute the tool
             let tool_result = self
                 .services
-                .call(&self.agent, tool_context, tool_call.clone())
+                .call(&self.agent, tool_context, (*tool_call).clone())
                 .await;
 
             // Fire the ToolcallEnd lifecycle event (fires on both success and failure)
             let toolcall_end_event = LifecycleEvent::ToolcallEnd(EventData::new(
                 self.agent.clone(),
                 self.agent.model.clone(),
-                ToolcallEndPayload::new(tool_call.clone(), tool_result.clone()),
+                ToolcallEndPayload::new((*tool_call).clone(), tool_result.clone()),
             ));
             self.hook
                 .handle(&toolcall_end_event, &mut self.conversation)
@@ -114,10 +145,22 @@ impl<S: AgentService> Orchestrator<S> {
                 self.send(ChatResponse::ToolCallEnd(tool_result.clone()))
                     .await?;
             }
-            // Ensure all tool calls and results are recorded
-            // Adding task completion records is critical for compaction to work correctly
-            tool_call_records.push((tool_call.clone(), tool_result));
+            other_results.push(((*tool_call).clone(), tool_result));
         }
+
+        // Reconstruct results in the original order of tool_calls.
+        let mut task_iter = task_results.into_iter();
+        let mut other_iter = other_results.into_iter();
+        let tool_call_records = tool_calls
+            .iter()
+            .map(|tc| {
+                if is_task(tc) {
+                    task_iter.next().expect("task result count mismatch")
+                } else {
+                    other_iter.next().expect("other result count mismatch")
+                }
+            })
+            .collect();
 
         Ok(tool_call_records)
     }
