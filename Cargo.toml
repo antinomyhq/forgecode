@@ -119,6 +119,7 @@ uuid = { version = "1.22.0", features = [
 whoami = "2.1.0"
 fnv_rs = "0.4.3"
 merge = { version = "0.2", features = ["derive"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
 rmcp = { version = "0.10.0", features = [
     "client",
     "transport-sse-client-reqwest",

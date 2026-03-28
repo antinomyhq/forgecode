@@ -9,6 +9,7 @@ mod input;
 mod model;
 mod porcelain;
 mod prompt;
+pub mod rprompt_fast;
 mod sandbox;
 mod state;
 mod stream_renderer;
@@ -17,7 +18,7 @@ mod title_display;
 mod tools_display;
 pub mod tracker;
 mod ui;
-mod utils;
+pub mod utils;
 mod vscode;
 mod zsh;
 
