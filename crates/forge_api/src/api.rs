@@ -23,8 +23,8 @@ pub trait API: Sync + Send {
     /// Provides a list of models available in the current environment
     async fn get_models(&self) -> Result<Vec<Model>>;
 
-    /// Provides models from all configured providers. Providers that fail to
-    /// return models are silently skipped.
+    /// Provides models from all configured providers.
+    /// Returns an error if any configured provider fails to return models.
     async fn get_all_provider_models(&self) -> Result<Vec<ProviderModels>>;
 
     /// Provides a list of agents available in the current environment

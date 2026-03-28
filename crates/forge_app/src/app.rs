@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Local;
 use forge_domain::*;
 use forge_stream::MpscStream;
@@ -260,8 +260,8 @@ impl<S: Services> ForgeApp<S> {
     /// Gets available models from all configured providers concurrently.
     ///
     /// Returns a list of `ProviderModels` for each configured provider.
-    /// All providers are queried in parallel; providers that fail to
-    /// return models are silently skipped.
+    /// All providers are queried in parallel and the first provider error is
+    /// returned to the caller.
     pub async fn get_all_provider_models(&self) -> Result<Vec<ProviderModels>> {
         let all_providers = self.services.get_all_providers().await?;
 
@@ -277,20 +277,20 @@ impl<S: Services> ForgeApp<S> {
                         .provider_auth_service()
                         .refresh_provider_credential(provider)
                         .await
-                        .ok()?;
-                    let models = services.models(refreshed).await.ok()?;
-                    Some(ProviderModels { provider_id, models })
+                        .with_context(|| {
+                            format!("Failed to refresh credentials for provider '{provider_id}'")
+                        })?;
+                    let models = services.models(refreshed).await.with_context(|| {
+                        format!("Failed to fetch models for provider '{provider_id}'")
+                    })?;
+
+                    Ok(ProviderModels { provider_id, models })
                 }
             })
             .collect();
 
-        // Execute all provider fetches concurrently and collect successful results
-        let results = futures::future::join_all(futures)
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
-
-        Ok(results)
+        // Execute all provider fetches concurrently and fail fast on errors so
+        // callers such as login/model selection can surface the root cause.
+        futures::future::try_join_all(futures).await
     }
 }
