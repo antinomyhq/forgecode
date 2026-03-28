@@ -263,6 +263,7 @@ impl<
                         false,
                         input.env.clone(),
                         input.description.clone(),
+                        input.nohup,
                     )
                     .await?;
                 output.into()

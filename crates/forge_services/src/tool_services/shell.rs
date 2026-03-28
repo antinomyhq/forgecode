@@ -2,13 +2,29 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::bail;
-use forge_app::domain::Environment;
+use chrono::Utc;
+use forge_app::domain::{CommandOutput, Environment};
 use forge_app::{CommandInfra, EnvironmentInfra, ShellOutput, ShellService};
 use strip_ansi_escapes::strip;
 
 // Strips out the ansi codes from content.
 fn strip_ansi(content: String) -> String {
     String::from_utf8_lossy(&strip(content.as_bytes())).into_owned()
+}
+
+/// Sanitizes a command string to be safe for use in a file name.
+fn sanitize_for_filename(command: &str) -> String {
+    command
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(50)
+        .collect()
 }
 
 /// Prevents potentially harmful operations like absolute path execution and
@@ -47,20 +63,60 @@ impl<I: CommandInfra + EnvironmentInfra> ShellService for ForgeShell<I> {
         silent: bool,
         env_vars: Option<Vec<String>>,
         description: Option<String>,
+        nohup: bool,
     ) -> anyhow::Result<ShellOutput> {
         Self::validate_command(&command)?;
 
-        let mut output = self
-            .infra
-            .execute_command(command, cwd, silent, env_vars)
-            .await?;
+        if nohup {
+            // Build the log file path: /tmp/<sanitized-command>-<timestamp>.log
+            let sanitized = sanitize_for_filename(&command);
+            let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
+            let log_path = format!("/tmp/{sanitized}-{timestamp}.log");
 
-        if !keep_ansi {
-            output.stdout = strip_ansi(output.stdout);
-            output.stderr = strip_ansi(output.stderr);
+            // Construct the nohup command that runs in background and echoes PID
+            let bg_command = format!("nohup {command} > '{log_path}' 2>&1 & echo $!");
+
+            let mut output = self
+                .infra
+                .execute_command(bg_command, cwd, silent, env_vars)
+                .await?;
+
+            if !keep_ansi {
+                output.stdout = strip_ansi(output.stdout);
+                output.stderr = strip_ansi(output.stderr);
+            }
+
+            // The stdout contains the PID from `echo $!`
+            let pid = output.stdout.trim().to_string();
+
+            // Replace the output with structured nohup result
+            let nohup_output = CommandOutput {
+                command: command.clone(),
+                stdout: format!(
+                    "Background process started.\nPID: {pid}\nLog file: {log_path}\n\nUse the read tool to check the log file for output."
+                ),
+                stderr: output.stderr,
+                exit_code: Some(0),
+            };
+
+            Ok(ShellOutput {
+                output: nohup_output,
+                shell: self.env.shell.clone(),
+                description,
+            })
+        } else {
+            let mut output = self
+                .infra
+                .execute_command(command, cwd, silent, env_vars)
+                .await?;
+
+            if !keep_ansi {
+                output.stdout = strip_ansi(output.stdout);
+                output.stderr = strip_ansi(output.stderr);
+            }
+
+            Ok(ShellOutput { output, shell: self.env.shell.clone(), description })
         }
-
-        Ok(ShellOutput { output, shell: self.env.shell.clone(), description })
     }
 }
 #[cfg(test)]
@@ -143,6 +199,7 @@ mod tests {
                 false,
                 Some(vec!["PATH".to_string(), "HOME".to_string()]),
                 None,
+                false,
             )
             .await
             .unwrap();
@@ -163,6 +220,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             )
             .await
             .unwrap();
@@ -185,6 +243,7 @@ mod tests {
                 false,
                 Some(vec![]),
                 None,
+                false,
             )
             .await
             .unwrap();
@@ -205,6 +264,7 @@ mod tests {
                 false,
                 None,
                 Some("Prints hello to stdout".to_string()),
+                false,
             )
             .await
             .unwrap();
@@ -229,6 +289,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             )
             .await
             .unwrap();
@@ -236,5 +297,44 @@ mod tests {
         assert_eq!(actual.output.stdout, "Mock output");
         assert_eq!(actual.output.exit_code, Some(0));
         assert_eq!(actual.description, None);
+    }
+
+    #[tokio::test]
+    async fn test_shell_service_nohup() {
+        let fixture = ForgeShell::new(Arc::new(MockCommandInfra { expected_env_vars: None }));
+
+        let actual = fixture
+            .execute(
+                "npm start".to_string(),
+                PathBuf::from("."),
+                false,
+                false,
+                None,
+                Some("Start the server".to_string()),
+                true,
+            )
+            .await
+            .unwrap();
+
+        // nohup should return structured output with PID and log file path
+        assert!(actual.output.stdout.contains("Background process started."));
+        assert!(actual.output.stdout.contains("PID:"));
+        assert!(actual.output.stdout.contains("Log file: /tmp/npm_start-"));
+        assert!(actual.output.stdout.contains(".log"));
+        assert_eq!(actual.output.exit_code, Some(0));
+        assert_eq!(actual.description, Some("Start the server".to_string()));
+    }
+
+    #[test]
+    fn test_sanitize_for_filename() {
+        assert_eq!(sanitize_for_filename("npm start"), "npm_start");
+        assert_eq!(sanitize_for_filename("ls -la"), "ls_-la");
+        assert_eq!(
+            sanitize_for_filename("python manage.py runserver 0.0.0.0:8000"),
+            "python_manage_py_runserver_0_0_0_0_8000"
+        );
+        // Test truncation at 50 chars
+        let long_command = "a".repeat(100);
+        assert_eq!(sanitize_for_filename(&long_command).len(), 50);
     }
 }

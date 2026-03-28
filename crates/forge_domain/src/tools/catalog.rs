@@ -564,6 +564,14 @@ pub struct Shell {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+
+    /// Whether to run the command in the background using nohup.
+    /// When true, the command runs via `nohup <command> > /tmp/<log>.log 2>&1
+    /// &` and immediately returns the log file path and process ID.
+    /// Use this for long-running processes like web servers.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_default")]
+    pub nohup: bool,
 }
 
 /// Input type for the net fetch tool
@@ -1702,6 +1710,7 @@ mod tests {
             keep_ansi: false,
             env: None,
             description: Some("Shows working tree status".to_string()),
+            nohup: false,
         };
 
         let actual = serde_json::to_value(&fixture).unwrap();
@@ -1725,6 +1734,7 @@ mod tests {
             keep_ansi: false,
             env: None,
             description: None,
+            nohup: false,
         };
 
         let actual = serde_json::to_value(&fixture).unwrap();
@@ -1747,6 +1757,7 @@ mod tests {
             keep_ansi: false,
             env: None,
             description: None,
+            nohup: false,
         };
 
         let actual = serde_json::to_value(&fixture).unwrap();

@@ -47,6 +47,7 @@ impl<S: SkillFetchService + ShellService> SystemPrompt<S> {
                 true,
                 None,
                 None,
+                false,
             )
             .await
             .ok()?;

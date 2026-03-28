@@ -49,7 +49,7 @@ fn to_op(tool: &SummaryTool) -> Operation<'_> {
         SummaryTool::FileUpdate { path } => Operation::File(path),
         SummaryTool::FileRemove { path } => Operation::File(path),
         SummaryTool::Undo { path } => Operation::File(path),
-        SummaryTool::Shell { command } => Operation::Shell(command),
+        SummaryTool::Shell { command, .. } => Operation::Shell(command),
         SummaryTool::Search { pattern } => Operation::Search(pattern),
         SummaryTool::SemSearch { queries } => Operation::CodebaseSearch { queries },
         SummaryTool::Fetch { url } => Operation::Fetch(url),

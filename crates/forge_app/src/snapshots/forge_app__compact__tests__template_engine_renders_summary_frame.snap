@@ -43,7 +43,7 @@ Search for TODO comments
 
 ### 8. Assistant
 
-**Execute:** 
+**Execute:**
 ```
 cargo test
 ```

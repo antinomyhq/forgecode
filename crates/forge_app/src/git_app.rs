@@ -162,7 +162,7 @@ where
 
         let commit_result = self
             .services
-            .execute(commit_command, cwd, false, true, None, None)
+            .execute(commit_command, cwd, false, true, None, None, false)
             .await
             .context("Failed to commit changes")?;
 
@@ -232,6 +232,7 @@ where
                 true,
                 None,
                 None,
+                false,
             ),
             self.services.execute(
                 "git rev-parse --abbrev-ref HEAD".into(),
@@ -240,6 +241,7 @@ where
                 true,
                 None,
                 None,
+                false,
             ),
         );
 
@@ -259,6 +261,7 @@ where
                 true,
                 None,
                 None,
+                false,
             ),
             self.services.execute(
                 "git diff".into(),
@@ -267,6 +270,7 @@ where
                 true,
                 None,
                 None,
+                false,
             )
         );
 

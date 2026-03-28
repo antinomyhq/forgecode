@@ -153,6 +153,13 @@ Bad example:
 
 Returns complete output including stdout, stderr, and exit code for diagnostic purposes.
 
+Background execution:
+  - Set `nohup: true` to run long-running processes (like web servers) in the background.
+  - When nohup is true, the command runs via `nohup <command> > /tmp/<log>.log 2>&1 &`
+  - Returns the log file path and process ID instead of waiting for completion.
+  - Use the read tool to check the log file for output.
+  - IMPORTANT: The log file path is preserved during context compaction so you can always access it.
+
 ---
 
 ### fetch

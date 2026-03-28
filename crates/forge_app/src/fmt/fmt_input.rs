@@ -100,11 +100,14 @@ impl FormatContent for ToolCatalog {
                 let display_path = display_path_for(&input.path);
                 Some(TitleFormat::debug("Undo").sub_title(display_path).into())
             }
-            ToolCatalog::Shell(input) => Some(
-                TitleFormat::debug(format!("Execute [{}]", env.shell))
-                    .sub_title(&input.command)
-                    .into(),
-            ),
+            ToolCatalog::Shell(input) => {
+                let action = if input.nohup { "Spawned" } else { "Execute" };
+                Some(
+                    TitleFormat::debug(format!("{action} [{}]", env.shell))
+                        .sub_title(&input.command)
+                        .into(),
+                )
+            }
             ToolCatalog::Fetch(input) => {
                 Some(TitleFormat::debug("GET").sub_title(&input.url).into())
             }
