@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::PathBuf;
 use std::process::Stdio;
 
@@ -59,26 +59,39 @@ pub fn generate_zsh_theme() -> Result<String> {
     Ok(content)
 }
 
-/// Executes a ZSH script with streaming output
+/// Executes a shell script with streaming output
 ///
 /// # Arguments
 ///
-/// * `script_content` - The ZSH script content to execute
+/// * `shell_path` - The shell binary used to execute the script
+/// * `shell_name` - Descriptive shell name used in messages
+/// * `script_content` - The shell script content to execute
 /// * `script_name` - Descriptive name for the script (used in error messages)
 ///
 /// # Errors
 ///
 /// Returns error if the script cannot be executed, if output streaming fails,
 /// or if the script exits with a non-zero status code
-fn execute_zsh_script_with_streaming(script_content: &str, script_name: &str) -> Result<()> {
-    // Execute the script in a zsh subprocess with piped output
-    let mut child = std::process::Command::new("zsh")
+fn execute_shell_script_with_streaming(
+    shell_path: &str,
+    shell_name: &str,
+    script_content: &str,
+    script_name: &str,
+) -> Result<()> {
+    let mut child = std::process::Command::new(shell_path)
         .arg("-c")
         .arg(script_content)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .context(format!("Failed to execute zsh {} script", script_name))?;
+        .map_err(|error| match error.kind() {
+            ErrorKind::NotFound if shell_name == "zsh" => {
+                anyhow::anyhow!(missing_zsh_error_message(script_name))
+            }
+            _ => anyhow::Error::new(error).context(format!(
+                "Failed to execute {shell_name} {script_name} script"
+            )),
+        })?;
 
     // Get stdout and stderr handles
     let stdout = child.stdout.take().context("Failed to capture stdout")?;
@@ -110,9 +123,9 @@ fn execute_zsh_script_with_streaming(script_content: &str, script_name: &str) ->
     });
 
     // Wait for the child process to complete
-    let status = child
-        .wait()
-        .context(format!("Failed to wait for zsh {} script", script_name))?;
+    let status = child.wait().context(format!(
+        "Failed to wait for {shell_name} {script_name} script"
+    ))?;
 
     if !status.success() {
         let exit_code = status
@@ -120,7 +133,8 @@ fn execute_zsh_script_with_streaming(script_content: &str, script_name: &str) ->
             .map_or_else(|| "unknown".to_string(), |code| code.to_string());
 
         anyhow::bail!(
-            "ZSH {} script failed with exit code: {}",
+            "{} {} script failed with exit code: {}",
+            shell_name.to_uppercase(),
             script_name,
             exit_code
         );
@@ -129,14 +143,32 @@ fn execute_zsh_script_with_streaming(script_content: &str, script_name: &str) ->
     Ok(())
 }
 
+fn missing_zsh_error_message(script_name: &str) -> String {
+    if cfg!(windows) {
+        format!(
+            "Cannot run `forge zsh {script_name}` on Windows. Forge shell support is available via WSL with zsh installed."
+        )
+    } else {
+        format!(
+            "Failed to execute zsh {script_name} script because `zsh` was not found in PATH. Install zsh and try again."
+        )
+    }
+}
+
 /// Runs diagnostics on the ZSH shell environment with streaming output
 ///
 /// # Errors
 ///
 /// Returns error if the doctor script cannot be executed
 pub fn run_zsh_doctor() -> Result<()> {
+    if cfg!(windows) {
+        anyhow::bail!(
+            "Cannot run `forge doctor` on Windows outside WSL. Forge shell support is available via WSL with zsh installed."
+        );
+    }
+
     let script_content = include_str!("../../../../shell-plugin/doctor.zsh");
-    execute_zsh_script_with_streaming(script_content, "doctor")
+    execute_shell_script_with_streaming("zsh", "zsh", script_content, "doctor")
 }
 
 /// Shows ZSH keyboard shortcuts with streaming output
@@ -146,7 +178,7 @@ pub fn run_zsh_doctor() -> Result<()> {
 /// Returns error if the keyboard script cannot be executed
 pub fn run_zsh_keyboard() -> Result<()> {
     let script_content = include_str!("../../../../shell-plugin/keyboard.zsh");
-    execute_zsh_script_with_streaming(script_content, "keyboard")
+    execute_shell_script_with_streaming("zsh", "zsh", script_content, "keyboard")
 }
 
 /// Represents the state of markers in a file
@@ -360,11 +392,33 @@ mod tests {
                 // in tests)
                 let error_msg = e.to_string();
                 assert!(
-                    error_msg.contains("exit code") || error_msg.contains("Failed to execute"),
+                    error_msg.contains("exit code")
+                        || error_msg.contains("Failed to execute")
+                        || error_msg.contains("Cannot run `forge doctor`"),
                     "Unexpected error: {}",
                     error_msg
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_missing_zsh_error_message_for_non_windows() {
+        let actual = missing_zsh_error_message("doctor");
+        let expected = "Failed to execute zsh doctor script because `zsh` was not found in PATH. Install zsh and try again.";
+
+        if !cfg!(windows) {
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_missing_zsh_error_message_for_windows() {
+        let actual = missing_zsh_error_message("doctor");
+        let expected = "Cannot run `forge zsh doctor` on Windows. Forge shell support is available via WSL with zsh installed.";
+
+        if cfg!(windows) {
+            assert_eq!(actual, expected);
         }
     }
 
