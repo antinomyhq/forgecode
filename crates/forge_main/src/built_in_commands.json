@@ -32,6 +32,10 @@
     "description": "Set the model used for command suggestion generation [alias: csm]"
   },
   {
+    "command": "config-env",
+    "description": "Browse and set FORGE_* environment variables [alias: ce]"
+  },
+  {
     "command": "config",
     "description": "List current configuration values"
   },

@@ -60,8 +60,10 @@ include_dir.workspace = true
 indexmap.workspace = true
 async-recursion.workspace = true
 
+forge_config.workspace = true
 forge_markdown_stream.workspace = true
 strip-ansi-escapes.workspace = true
+toml_edit.workspace = true
 terminal_size = "0.4"
 rustls.workspace = true
 

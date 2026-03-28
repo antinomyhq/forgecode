@@ -1,6 +1,7 @@
 mod auto_dump;
 mod compact;
 mod config;
+mod env_registry;
 mod error;
 mod http;
 mod legacy;
@@ -12,6 +13,7 @@ mod writer;
 pub use auto_dump::*;
 pub use compact::*;
 pub use config::*;
+pub use env_registry::*;
 pub use error::Error;
 pub use http::*;
 pub use model::*;

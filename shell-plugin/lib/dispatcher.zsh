@@ -184,6 +184,9 @@ function forge-accept-line() {
         config-suggest-model|csm)
             _forge_action_suggest_model "$input_text"
         ;;
+        config-env|ce)
+            _forge_action_config_env "$input_text"
+        ;;
         tools|t)
             _forge_action_tools
         ;;

@@ -3448,6 +3448,9 @@ impl<A: API + ConsoleWriter + 'static, F: Fn() -> A + Send + Sync> UI<A, F> {
                     format!("is now the suggest model for provider '{provider}'"),
                 ))?;
             }
+            ConfigSetField::Env { key, value } => {
+                self.handle_config_env_set(&key, &value)?;
+            }
         }
 
         Ok(())
@@ -3509,8 +3512,147 @@ impl<A: API + ConsoleWriter + 'static, F: Fn() -> A + Send + Sync> UI<A, F> {
                     None => self.writeln("Suggest: Not set")?,
                 }
             }
+            ConfigGetField::Env { key } => {
+                self.handle_config_env_get(key.as_deref())?;
+            }
         }
 
+        Ok(())
+    }
+
+    /// Writes a `FORGE_*` environment variable to the global `.forge.toml`
+    /// config file.
+    ///
+    /// The value is parsed into the appropriate TOML type and written to the
+    /// config file via the standard `ForgeConfig::write()` path. The
+    /// environment variable is also applied to the running process so the
+    /// change takes effect immediately.
+    fn handle_config_env_set(&mut self, key: &str, value: &str) -> Result<()> {
+        use forge_config::{ConfigReader, find_env_var};
+
+        let entry = find_env_var(key)
+            .ok_or_else(|| anyhow::anyhow!("Unknown environment variable: {key}"))?;
+
+        // Read the current global config
+        let config_path = ConfigReader::config_path();
+        let existing = if config_path.exists() {
+            std::fs::read_to_string(&config_path)?
+        } else {
+            String::new()
+        };
+
+        // Parse the existing TOML document for editing
+        let mut doc: toml_edit::DocumentMut = existing.parse().unwrap_or_default();
+
+        // Set the value in the TOML document at the correct path
+        let parts: Vec<&str> = entry.toml_key.split('.').collect();
+        if parts.len() == 2 {
+            // Nested key like "retry.initial_backoff_ms"
+            let table_name = parts[0];
+            let field_name = parts[1];
+            if !doc.contains_table(table_name) {
+                doc[table_name] = toml_edit::Item::Table(toml_edit::Table::new());
+            }
+            doc[table_name][field_name] = Self::parse_toml_value(value);
+        } else {
+            // Top-level key
+            doc[entry.toml_key] = Self::parse_toml_value(value);
+        }
+
+        // Ensure parent directory exists and write
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&config_path, doc.to_string())?;
+
+        // Apply to running process for immediate effect
+        unsafe { std::env::set_var(entry.env_name, value) };
+
+        self.writeln_title(
+            TitleFormat::action(entry.env_name)
+                .sub_title(format!("set to '{value}' in {}", config_path.display())),
+        )?;
+        Ok(())
+    }
+
+    /// Parses a string value into a TOML item, inferring the type
+    /// (bool, integer, float, or string).
+    fn parse_toml_value(value: &str) -> toml_edit::Item {
+        // Try bool
+        if let Ok(b) = value.parse::<bool>() {
+            return toml_edit::value(b);
+        }
+        // Try integer
+        if let Ok(i) = value.parse::<i64>() {
+            return toml_edit::value(i);
+        }
+        // Try float (only if it contains a dot)
+        if value.contains('.') && let Ok(f) = value.parse::<f64>() {
+            return toml_edit::value(f);
+        }
+        // Default to string
+        toml_edit::value(value)
+    }
+
+    /// Prints the current value of one or all `FORGE_*` environment variables.
+    ///
+    /// When `key` is `None`, every known variable is listed with its current
+    /// value (or default), making all configurable knobs discoverable.
+    fn handle_config_env_get(&mut self, key: Option<&str>) -> Result<()> {
+        use forge_config::{env_var_registry, find_env_var};
+
+        if let Some(k) = key {
+            let upper_key = k.to_uppercase();
+            // Check if the key has a FORGE_ prefix, add it if not
+            let lookup_key = if upper_key.starts_with("FORGE_") {
+                upper_key.clone()
+            } else {
+                format!("FORGE_{upper_key}")
+            };
+            match find_env_var(&lookup_key) {
+                Some(entry) => {
+                    let current = std::env::var(entry.env_name).ok();
+                    match current {
+                        Some(val) => {
+                            self.writeln(format!("{}={}", entry.env_name, val))?;
+                        }
+                        None => {
+                            self.writeln(format!(
+                                "{} (not set, default: {})",
+                                entry.env_name, entry.default
+                            ))?;
+                        }
+                    }
+                }
+                None => {
+                    // Try raw env lookup as fallback
+                    match std::env::var(&upper_key) {
+                        Ok(val) => self.writeln(format!("{upper_key}={val}"))?,
+                        Err(_) => self.writeln(format!("{upper_key} is not set"))?,
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        // List all known variables
+        let registry = env_var_registry();
+        let mut info = Info::new().add_title("ENVIRONMENT VARIABLES");
+        for entry in registry {
+            let current = std::env::var(entry.env_name).ok();
+            let display_value = match &current {
+                Some(v) => format!("{v}  (set)"),
+                None => {
+                    if entry.default.is_empty() {
+                        "(not set)".to_string()
+                    } else {
+                        format!("{}  (default)", entry.default)
+                    }
+                }
+            };
+            info = info.add_key_value(entry.env_name, format!("{display_value}  # {}", entry.description));
+        }
+        self.writeln(info)?;
         Ok(())
     }
 

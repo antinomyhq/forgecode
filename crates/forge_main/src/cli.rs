@@ -542,6 +542,13 @@ pub enum ConfigSetField {
         /// Model ID to use for command suggestion generation.
         model: ModelId,
     },
+    /// Set a FORGE_* environment variable in the global config file.
+    Env {
+        /// The environment variable name (e.g., FORGE_TOOL_TIMEOUT_SECS).
+        key: String,
+        /// The value to assign.
+        value: String,
+    },
 }
 
 /// Type-safe subcommands for `forge config get`.
@@ -555,6 +562,13 @@ pub enum ConfigGetField {
     Commit,
     /// Get the command suggestion generation config.
     Suggest,
+    /// List all FORGE_* environment variables with their current values and
+    /// defaults. Optionally pass a variable name to show only that entry.
+    Env {
+        /// Optional environment variable name to inspect (e.g.,
+        /// FORGE_TOOL_TIMEOUT_SECS).
+        key: Option<String>,
+    },
 }
 
 /// Command group for conversation management.
