@@ -129,9 +129,7 @@ fn to_environment(fc: ForgeConfig, cwd: PathBuf) -> Environment {
         } else {
             std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
         },
-        base_path: dirs::home_dir()
-            .map(|h| h.join("forge"))
-            .unwrap_or_else(|| PathBuf::from(".").join("forge")),
+        base_path: ConfigReader::base_path(),
 
         // --- ForgeConfig-mapped fields ---
         retry_config: fc.retry.map(to_retry_config).unwrap_or_default(),
