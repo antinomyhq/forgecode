@@ -2076,13 +2076,13 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
     /// selected the model list is scoped to that provider only.
     ///
     /// # Returns
-    /// - `Ok(Some(ModelId))` if a model was selected
+    /// - `Ok(Some((ProviderId, ModelId)))` if a model was selected
     /// - `Ok(None)` if selection was canceled
     #[async_recursion::async_recursion]
     async fn select_model(
         &mut self,
         provider_filter: Option<ProviderId>,
-    ) -> Result<Option<ModelId>> {
+    ) -> Result<Option<(ProviderId, ModelId)>> {
         // Check if provider is set otherwise first ask to select a provider
         if provider_filter.is_none() && self.api.get_default_provider().await.is_err() {
             if !self.on_provider_selection().await? {
@@ -2182,21 +2182,21 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             return Ok(None);
         }
 
-        // Build a flat list of (ModelId, display_line) for the data rows.
+        // Build a flat list of (ProviderId, ModelId) for the data rows.
         // The first line is the header; data rows follow in the same order as
         // the Info entries (sorted by provider, then model within provider).
-        let mut model_ids: Vec<ModelId> = Vec::new();
+        let mut selections: Vec<(ProviderId, ModelId)> = Vec::new();
         for pm in &all_provider_models {
             for model in &pm.models {
-                model_ids.push(model.id.clone());
+                selections.push((pm.provider_id.clone(), model.id.clone()));
             }
         }
 
         // Create display items: header line first, then data lines paired with
-        // model IDs.
+        // provider/model selections.
         #[derive(Clone)]
         struct ModelRow {
-            model_id: Option<ModelId>,
+            selection: Option<(ProviderId, ModelId)>,
             display: String,
         }
         impl std::fmt::Display for ModelRow {
@@ -2207,32 +2207,40 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
 
         let mut rows: Vec<ModelRow> = Vec::with_capacity(all_lines.len());
         // Header row (non-selectable via header_lines=1)
-        rows.push(ModelRow { model_id: None, display: all_lines[0].to_string() });
+        rows.push(ModelRow { selection: None, display: all_lines[0].to_string() });
         // Data rows
         for (i, line) in all_lines.iter().skip(1).enumerate() {
             rows.push(ModelRow {
-                model_id: model_ids.get(i).cloned(),
+                selection: selections.get(i).cloned(),
                 display: line.to_string(),
             });
         }
 
-        // Find starting cursor position for the current model.
+        // Find starting cursor position for the current provider/model pair.
         // The cursor position is relative to the data rows (header is excluded
         // by fzf's --header-lines), so index 0 = first data row.
-        let current_model = self
-            .get_agent_model(self.api.get_active_agent().await)
-            .await;
-        let starting_cursor = current_model
-            .as_ref()
-            .and_then(|current| model_ids.iter().position(|id| id == current))
-            .unwrap_or(0);
+        let active_agent = self.api.get_active_agent().await;
+        let current_model = self.get_agent_model(active_agent.clone()).await;
+        let current_provider = self.get_provider(active_agent).await.ok().map(|p| p.id);
+        let starting_cursor = match (current_provider, current_model) {
+            (Some(provider), Some(model)) => selections
+                .iter()
+                .position(|(pid, mid)| pid == &provider && mid == &model)
+                .or_else(|| selections.iter().position(|(_, mid)| mid == &model))
+                .unwrap_or(0),
+            (_, Some(model)) => selections
+                .iter()
+                .position(|(_, mid)| mid == &model)
+                .unwrap_or(0),
+            _ => 0,
+        };
 
         match ForgeWidget::select("Model", rows)
             .with_starting_cursor(starting_cursor)
             .with_header_lines(1)
             .prompt()?
         {
-            Some(row) => Ok(row.model_id),
+            Some(row) => Ok(row.selection),
             None => Ok(None),
         }
     }
@@ -2753,22 +2761,31 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         provider_filter: Option<ProviderId>,
         provider_to_activate: Option<ProviderId>,
     ) -> Result<Option<ModelId>> {
-        // Select a model
-        let model_option = self.select_model(provider_filter).await?;
+        // Select a model/provider pair
+        let selection = self.select_model(provider_filter).await?;
 
         // If no model was selected (user canceled), return early
-        let model = match model_option {
-            Some(model) => model,
+        let (selected_provider, model) = match selection {
+            Some(selection) => selection,
             None => return Ok(None),
         };
 
-        // If we have a provider to activate, write both atomically
+        // If we have a provider to activate, write both atomically.
+        // Otherwise, if the selected model belongs to a different provider,
+        // switch provider and model together.
         if let Some(provider_id) = provider_to_activate {
             self.api
                 .set_default_provider_and_model(provider_id, model.clone())
                 .await?;
         } else {
-            self.api.set_default_model(model.clone()).await?;
+            let current_provider = self.api.get_default_provider().await.ok().map(|p| p.id);
+            if current_provider.as_ref() == Some(&selected_provider) {
+                self.api.set_default_model(model.clone()).await?;
+            } else {
+                self.api
+                    .set_default_provider_and_model(selected_provider, model.clone())
+                    .await?;
+            }
         }
 
         // Update the UI state with the new model
