@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::Write;
 use std::path::PathBuf;
-use std::process::Command;
 
 use convert_case::{Case, Casing};
 use derive_setters::Setters;
@@ -138,30 +137,9 @@ impl Prompt for ForgePrompt {
 
 /// Gets the current git branch name if available
 fn get_git_branch() -> Option<String> {
-    // First check if we're in a git repository
-    let git_check = Command::new("git")
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .output()
-        .ok()?;
-
-    if !git_check.status.success() || git_check.stdout.is_empty() {
-        return None;
-    }
-
-    // If we are in a git repo, get the branch
-    let output = Command::new("git")
-        .args(["branch", "--show-current"])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        String::from_utf8(output.stdout)
-            .ok()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-    } else {
-        None
-    }
+    let repo = gix::discover(".").ok()?;
+    let head = repo.head().ok()?;
+    head.referent_name().map(|r| r.shorten().to_string())
 }
 
 #[cfg(test)]
