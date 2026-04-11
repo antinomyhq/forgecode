@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use colored::Colorize;
-use forge_domain::ConsoleWriter;
+use forge_domain::{ConsoleWriter, Usage};
 use forge_markdown_stream::StreamdownRenderer;
 use forge_spinner::SpinnerManager;
 
@@ -61,6 +61,14 @@ impl<P: ConsoleWriter> SharedSpinner<P> {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .ewrite_ln(message)
+    }
+
+    /// Updates the spinner message with live token usage statistics.
+    pub fn update_usage(&self, usage: &Usage) -> Result<()> {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .update_usage(usage)
     }
 }
 

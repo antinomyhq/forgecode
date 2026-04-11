@@ -1,9 +1,9 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use colored::Colorize;
-use forge_domain::ConsoleWriter;
+use forge_domain::{ConsoleWriter, Usage};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use rand::RngExt;
 
@@ -16,16 +16,7 @@ const TICKS: &[&str; 10] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 
 /// Formats elapsed time into a compact string representation.
 ///
-/// # Arguments
-///
-/// * `duration` - The elapsed time duration
-///
-/// # Returns
-///
-/// A formatted string:
-/// - Less than 1 minute: "01s", "02s", etc.
-/// - Less than 1 hour: "1:01m", "1:59m", etc.
-/// - 1 hour or more: "1:01h", "2:30h", etc.
+/// Returns a string like "01s", "1:01m", or "1:01h".
 fn format_elapsed_time(duration: Duration) -> String {
     let total_seconds = duration.as_secs();
     if total_seconds < 60 {
@@ -41,6 +32,63 @@ fn format_elapsed_time(duration: Duration) -> String {
     }
 }
 
+/// Formats a usize with thousands separators using commas (e.g. 12450 →
+/// "12,450").
+fn format_number(n: usize) -> String {
+    let s = n.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, ch) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    result.chars().rev().collect()
+}
+
+/// Builds the spinner prefix containing live token stats in parentheses.
+///
+/// Format when stats are available: `(↑12,450  ↓234 31% 47t/s) · Ctrl+C to
+/// interrupt`
+///
+/// Cache percentage is omitted when zero. Tokens per second (`t/s`) is
+/// calculated from `(token_delta, elapsed)` when provided, giving real-time
+/// estimated throughput based on when usage updates arrive.
+fn format_stats_prefix(
+    prompt: usize,
+    completion: usize,
+    cached: usize,
+    tps_data: Option<(usize, Duration)>,
+) -> String {
+    let cache_pct = if prompt > 0 {
+        (cached as f64 / prompt as f64 * 100.0) as usize
+    } else {
+        0
+    };
+
+    let cache_part = if cache_pct > 0 {
+        format!(" {}%", cache_pct)
+    } else {
+        String::new()
+    };
+
+    let tps_part = match tps_data {
+        Some((token_delta, elapsed)) if token_delta > 0 && elapsed.as_secs_f64() > 0.0 => {
+            let tps = token_delta as f64 / elapsed.as_secs_f64();
+            format!(" {:.0}t/s", tps)
+        }
+        _ => String::new(),
+    };
+
+    format!(
+        "(↑{}  ↓{}{}{}) · Ctrl+C to interrupt",
+        format_number(prompt),
+        format_number(completion),
+        cache_part,
+        tps_part,
+    )
+}
+
 /// Manages spinner functionality for the UI.
 ///
 /// Uses indicatif's built-in `{elapsed}` template for time display,
@@ -53,6 +101,21 @@ pub struct SpinnerManager<P: ConsoleWriter> {
     accumulated_elapsed: Duration,
     word_index: Option<usize>,
     message: Option<String>,
+    /// Cached stats prefix set by `update_usage`, persisted across start/stop
+    /// cycles.
+    stats_prefix: Option<String>,
+    /// Last known input token count, preserved across usage updates.
+    /// This ensures we don't show 0 when estimated usage arrives before
+    /// provider-sent input token count.
+    last_known_prompt_tokens: usize,
+    /// Last known cache token count, preserved across usage updates.
+    last_known_cached_tokens: usize,
+    /// Tracks when the first estimated usage arrived for tps calculation.
+    /// tps is calculated as (current_tokens - first_tokens) /
+    /// elapsed_since_first.
+    first_usage_instant: Option<Instant>,
+    /// Token count from the first usage update (for tps delta calculation).
+    first_usage_tokens: usize,
     printer: Arc<P>,
 }
 
@@ -64,6 +127,11 @@ impl<P: ConsoleWriter> SpinnerManager<P> {
             accumulated_elapsed: Duration::ZERO,
             word_index: None,
             message: None,
+            stats_prefix: None,
+            last_known_prompt_tokens: 0,
+            last_known_cached_tokens: 0,
+            first_usage_instant: None,
+            first_usage_tokens: 0,
             printer,
         }
     }
@@ -83,7 +151,8 @@ impl<P: ConsoleWriter> SpinnerManager<P> {
             "Contemplating",
         ];
 
-        // Use a random word from the list, caching the index for consistency
+        // Priority: explicit message > random word (stats live in the prefix, not the
+        // message)
         let word = match message {
             Some(msg) => msg.to_string(),
             None => {
@@ -95,6 +164,12 @@ impl<P: ConsoleWriter> SpinnerManager<P> {
         };
 
         self.message = Some(word.clone());
+
+        // Build the prefix: cached stats (with Ctrl+C) or plain Ctrl+C hint
+        let prefix = self
+            .stats_prefix
+            .clone()
+            .unwrap_or_else(|| "· Ctrl+C to interrupt".to_string());
 
         // Create the spinner with accumulated elapsed time
         // Use custom elapsed formatter for "01s", "1:01m", "1:01h" format
@@ -113,7 +188,7 @@ impl<P: ConsoleWriter> SpinnerManager<P> {
                     ),
             )
             .with_message(word.green().bold().to_string())
-            .with_prefix("· Ctrl+C to interrupt");
+            .with_prefix(prefix);
 
         // Preserve spinner tick position for visual continuity
         // The spinner has 10 tick positions cycling every 600ms (60ms per tick)
@@ -165,6 +240,83 @@ impl<P: ConsoleWriter> SpinnerManager<P> {
         self.accumulated_elapsed = Duration::ZERO;
         self.word_index = None;
         self.message = None;
+        self.stats_prefix = None;
+        self.last_known_prompt_tokens = 0;
+        self.last_known_cached_tokens = 0;
+        self.first_usage_instant = None;
+        self.first_usage_tokens = 0;
+    }
+
+    /// Updates the spinner prefix with live token usage statistics.
+    ///
+    /// Stats are shown in the `{prefix}` slot so the random word in `{msg}` is
+    /// never overwritten. Format: `(↑12,450  ↓234 31% 47t/s) · Ctrl+C to
+    /// interrupt`
+    ///
+    /// Tokens per second is calculated based on when usage updates arrive.
+    /// On the first update, we record the instant and token count. On
+    /// subsequent updates, tps = (current_tokens - first_tokens) /
+    /// elapsed_since_first. This gives real-time estimated tps regardless
+    /// of whether the usage is from the provider or estimated from content.
+    pub fn update_usage(&mut self, usage: &Usage) -> Result<()> {
+        let prompt = *usage.prompt_tokens;
+        let completion = *usage.completion_tokens;
+        let cached = *usage.cached_tokens;
+
+        if prompt == 0 && completion == 0 {
+            return Ok(());
+        }
+
+        // Update last known values when we receive non-zero data from provider
+        // This preserves input tokens and cache hits across estimated updates
+        if prompt > 0 {
+            self.last_known_prompt_tokens = prompt;
+        }
+        if cached > 0 {
+            self.last_known_cached_tokens = cached;
+        }
+
+        // Use last known values for display if current usage has zeros
+        // (estimated usage may not have input/cache data yet)
+        let display_prompt = if prompt > 0 {
+            prompt
+        } else {
+            self.last_known_prompt_tokens
+        };
+        let display_cached = if cached > 0 {
+            cached
+        } else {
+            self.last_known_cached_tokens
+        };
+
+        // Calculate tps based on when usage updates arrive
+        let tps_data = if completion > 0 {
+            if let Some(instant) = self.first_usage_instant {
+                // Subsequent updates - calculate tps from delta
+                let elapsed = instant.elapsed();
+                let token_delta = completion.saturating_sub(self.first_usage_tokens);
+                if elapsed > Duration::ZERO && token_delta > 0 {
+                    Some((token_delta, elapsed))
+                } else {
+                    None
+                }
+            } else {
+                // First usage update - record baseline
+                self.first_usage_instant = Some(Instant::now());
+                self.first_usage_tokens = completion;
+                // First update, no tps yet
+                None
+            }
+        } else {
+            None
+        };
+
+        let prefix = format_stats_prefix(display_prompt, completion, display_cached, tps_data);
+        self.stats_prefix = Some(prefix.clone());
+        if let Some(pb) = &self.spinner {
+            pb.set_prefix(prefix);
+        }
+        Ok(())
     }
 
     /// Writes a line to stdout, suspending the spinner if active.
@@ -367,5 +519,75 @@ mod tests {
         let actual = format_elapsed_time(Duration::ZERO);
         let expected = "00s";
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_format_stats_prefix_with_tps() {
+        // Test with tps data - should show t/s
+        let actual =
+            super::format_stats_prefix(1000, 500, 100, Some((250, Duration::from_secs(5))));
+        // tps = 250 / 5 = 50 t/s
+        assert!(
+            actual.contains("50t/s"),
+            "Expected tps in output, got: {}",
+            actual
+        );
+    }
+
+    #[test]
+    fn test_format_stats_prefix_without_tps() {
+        // Test without tps data - should not show t/s
+        let actual = super::format_stats_prefix(1000, 500, 100, None);
+        assert!(
+            !actual.contains("t/s"),
+            "Should not show t/s when no tps data: {}",
+            actual
+        );
+    }
+
+    #[test]
+    fn test_update_usage_calculates_tps_on_second_call() {
+        use forge_domain::{TokenCount, Usage};
+
+        let printer = Arc::new(DirectPrinter);
+        let mut spinner = SpinnerManager::new(printer);
+
+        // First update - records baseline, no tps yet
+        let usage1 = Usage {
+            prompt_tokens: TokenCount::Actual(100),
+            completion_tokens: TokenCount::Actual(50),
+            total_tokens: TokenCount::Actual(150),
+            cached_tokens: TokenCount::Actual(0),
+            cost: None,
+        };
+        spinner.update_usage(&usage1).unwrap();
+
+        // stats_prefix should be set but without t/s
+        let prefix1 = spinner.stats_prefix.clone().unwrap();
+        assert!(
+            !prefix1.contains("t/s"),
+            "First update should not show t/s: {}",
+            prefix1
+        );
+
+        // Wait a tiny bit and do second update
+        std::thread::sleep(Duration::from_millis(100));
+
+        let usage2 = Usage {
+            prompt_tokens: TokenCount::Actual(100),
+            completion_tokens: TokenCount::Actual(100), // 50 more tokens
+            total_tokens: TokenCount::Actual(200),
+            cached_tokens: TokenCount::Actual(0),
+            cost: None,
+        };
+        spinner.update_usage(&usage2).unwrap();
+
+        // Now should have t/s
+        let prefix2 = spinner.stats_prefix.clone().unwrap();
+        assert!(
+            prefix2.contains("t/s"),
+            "Second update should show t/s: {}",
+            prefix2
+        );
     }
 }

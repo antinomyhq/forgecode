@@ -5,7 +5,7 @@ use std::time::Duration;
 use chrono::Local;
 use tokio::sync::Notify;
 
-use crate::{ToolCallFull, ToolName, ToolResult};
+use crate::{ToolCallFull, ToolName, ToolResult, Usage};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChatResponseContent {
@@ -71,6 +71,13 @@ pub enum ChatResponse {
     },
     Interrupt {
         reason: InterruptionReason,
+    },
+    /// Emitted whenever a streaming chunk carries token usage data.
+    ///
+    /// Carries a cumulative `Usage` snapshot so the receiver always sees the
+    /// running total rather than per-chunk deltas.
+    UsageUpdate {
+        usage: Usage,
     },
 }
 

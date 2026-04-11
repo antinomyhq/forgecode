@@ -360,7 +360,11 @@ pub struct UrlMetadata {
 impl From<UsageMetadata> for forge_domain::Usage {
     fn from(usage: UsageMetadata) -> Self {
         let prompt_tokens = usage.prompt_token_count.unwrap_or_default() as usize;
-        let completion_tokens = usage.candidates_token_count.unwrap_or_default() as usize;
+        // completion_tokens must include thinking tokens so tok/s reflects total
+        // model output, not just the small visible-text portion. For non-thinking
+        // models thoughts_token_count is None/0 so this is backwards-compatible.
+        let completion_tokens = usage.candidates_token_count.unwrap_or_default() as usize
+            + usage.thoughts_token_count.unwrap_or_default() as usize;
         let cached_tokens = usage.cached_content_token_count.unwrap_or_default() as usize;
         let total_tokens = usage.total_token_count.unwrap_or_default() as usize;
 
@@ -736,6 +740,29 @@ mod tests {
         assert_eq!(domain_usage.completion_tokens, TokenCount::Actual(20));
         assert_eq!(domain_usage.total_tokens, TokenCount::Actual(30));
         assert_eq!(domain_usage.cached_tokens, TokenCount::Actual(5));
+    }
+
+    #[test]
+    fn test_usage_metadata_conversion_with_thoughts() {
+        // Gemini thinking models report visible output in candidates_token_count
+        // and reasoning tokens in thoughts_token_count separately. Both must be
+        // summed into completion_tokens so tok/s is accurate.
+        let usage = UsageMetadata {
+            prompt_token_count: Some(100),
+            candidates_token_count: Some(30),
+            thoughts_token_count: Some(500),
+            total_token_count: Some(630),
+            cached_content_token_count: None,
+            traffic_type: None,
+        };
+
+        let actual: forge_domain::Usage = usage.into();
+
+        assert_eq!(actual.prompt_tokens, TokenCount::Actual(100));
+        // 30 visible + 500 thinking = 530 total completion tokens
+        assert_eq!(actual.completion_tokens, TokenCount::Actual(530));
+        assert_eq!(actual.total_tokens, TokenCount::Actual(630));
+        assert_eq!(actual.cached_tokens, TokenCount::Actual(0));
     }
 
     #[test]

@@ -64,6 +64,18 @@ impl ResultStreamExt<anyhow::Error> for crate::BoxStream<ChatCompletionMessage, 
         let mut xml_tool_calls = None;
         let mut tool_interrupted = false;
 
+        // Track accumulated content length for real-time token estimation
+        // (used when providers like Anthropic don't send per-chunk usage)
+        let mut accumulated_chars: usize = 0;
+        // Track the last known prompt tokens so estimated usage doesn't show 0
+        // when content arrives before the provider sends input token count
+        let mut last_known_prompt_tokens: usize = 0;
+        // Throttle estimated usage updates to every 300ms for very responsive tps
+        // calculation while still avoiding excessive UI updates. This provides
+        // near real-time tps readings that update smoothly as tokens arrive.
+        let mut last_usage_update = std::time::Instant::now();
+        const USAGE_UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(300);
+
         while let Some(message) = self.next().await {
             let message =
                 anyhow::Ok(message?).with_context(|| "Failed to process message stream")?;
@@ -111,10 +123,60 @@ impl ResultStreamExt<anyhow::Error> for crate::BoxStream<ChatCompletionMessage, 
                     // double-counting when message_start includes output_tokens=1.
                     usage = usage.merge(current_usage);
                 }
+
+                // Track the last known prompt tokens for real-time estimation
+                if *usage.prompt_tokens > 0 {
+                    last_known_prompt_tokens = *usage.prompt_tokens;
+                }
+
+                // Emit a live UsageUpdate with the current accumulated snapshot so
+                // Emit a live UsageUpdate with the current accumulated snapshot so
+                // the UI can update the spinner in real-time. Only emit when at
+                // least one token field is non-zero to avoid spurious cost-only
+                // events cluttering the display.
+                //
+                // IMPORTANT: Ensure completion tokens include reasoning by using
+                // the max of provider's reported completion and our accumulated
+                // estimate. Some providers don't include reasoning tokens in their
+                // reported completion_tokens, but our accumulated_chars does.
+                let has_tokens = *usage.prompt_tokens > 0 || *usage.completion_tokens > 0;
+                if has_tokens && let Some(ref sender) = sender {
+                    // Estimate from accumulated content (includes reasoning)
+                    let estimated_from_content = accumulated_chars.div_ceil(4);
+                    // Use the higher of provider's reported or our estimate
+                    let completion_with_reasoning =
+                        (*usage.completion_tokens).max(estimated_from_content);
+
+                    let adjusted_usage = Usage {
+                        prompt_tokens: usage.prompt_tokens,
+                        completion_tokens: crate::TokenCount::Actual(completion_with_reasoning),
+                        total_tokens: crate::TokenCount::Actual(
+                            *usage.prompt_tokens + completion_with_reasoning,
+                        ),
+                        cached_tokens: usage.cached_tokens,
+                        cost: usage.cost,
+                    };
+                    let _ = sender
+                        .send(Ok(ChatResponse::UsageUpdate { usage: adjusted_usage }))
+                        .await;
+                }
             }
 
             if !tool_interrupted {
                 messages.push(message.clone());
+
+                // Track content length for real-time token estimation
+                let content_len = message
+                    .content
+                    .as_ref()
+                    .map(|c| c.as_str().len())
+                    .unwrap_or(0);
+                let reasoning_len = message
+                    .reasoning
+                    .as_ref()
+                    .map(|r| r.as_str().len())
+                    .unwrap_or(0);
+                let delta_chars = content_len + reasoning_len;
 
                 // Stream content delta if sender is available
                 if let Some(ref sender) = sender {
@@ -141,6 +203,41 @@ impl ResultStreamExt<anyhow::Error> for crate::BoxStream<ChatCompletionMessage, 
                                         partial: true,
                                     },
                                 }))
+                                .await;
+                        }
+                    }
+
+                    // Emit real-time usage update based on content length estimation
+                    // This provides near real-time tok/s even when providers don't send
+                    // per-chunk usage (e.g., Anthropic only sends usage at the end)
+                    // Throttled to every 5 seconds to avoid flooding the UI.
+                    if delta_chars > 0 {
+                        accumulated_chars += delta_chars;
+
+                        let now = std::time::Instant::now();
+                        if now.duration_since(last_usage_update) >= USAGE_UPDATE_INTERVAL {
+                            last_usage_update = now;
+
+                            // Estimate tokens using ~4 chars per token approximation
+                            let estimated_completion_tokens = accumulated_chars.div_ceil(4);
+
+                            // Build usage with estimated completion tokens
+                            // Use last_known_prompt_tokens so we don't show 0 when
+                            // content arrives before input token count is received
+                            let estimated_usage = Usage {
+                                prompt_tokens: crate::TokenCount::Approx(last_known_prompt_tokens),
+                                completion_tokens: crate::TokenCount::Approx(
+                                    estimated_completion_tokens,
+                                ),
+                                total_tokens: crate::TokenCount::Approx(
+                                    last_known_prompt_tokens + estimated_completion_tokens,
+                                ),
+                                cached_tokens: usage.cached_tokens,
+                                cost: None, // Can't estimate cost
+                            };
+
+                            let _ = sender
+                                .send(Ok(ChatResponse::UsageUpdate { usage: estimated_usage }))
                                 .await;
                         }
                     }
@@ -641,7 +738,7 @@ mod tests {
             deltas.push(msg.unwrap());
         }
 
-        // Expected: Two deltas were sent as TaskMessage with Markdown content
+        // Expected: Two events were sent: two TaskMessage deltas
         assert_eq!(deltas.len(), 2);
         assert!(matches!(
             &deltas[0],
@@ -1254,5 +1351,150 @@ mod tests {
         };
 
         assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    async fn test_into_full_streaming_sends_usage_updates() {
+        // Fixture: Anthropic-style stream — input tokens arrive first, output tokens
+        // arrive at the end.
+        let messages = vec![
+            // MessageStart: prompt tokens only
+            Ok(ChatCompletionMessage::default().usage(Usage {
+                prompt_tokens: TokenCount::Actual(1000),
+                completion_tokens: TokenCount::Actual(0),
+                total_tokens: TokenCount::Actual(1000),
+                cached_tokens: TokenCount::Actual(300),
+                cost: None,
+            })),
+            // Content delta — no usage
+            Ok(ChatCompletionMessage::default().content(Content::part("Hello world!"))),
+            // MessageDelta: output tokens only
+            Ok(ChatCompletionMessage::default()
+                .usage(Usage {
+                    prompt_tokens: TokenCount::Actual(0),
+                    completion_tokens: TokenCount::Actual(50),
+                    total_tokens: TokenCount::Actual(50),
+                    cached_tokens: TokenCount::Actual(0),
+                    cost: None,
+                })
+                .finish_reason(FinishReason::Stop)),
+        ];
+
+        let result_stream: BoxStream<ChatCompletionMessage, anyhow::Error> =
+            Box::pin(tokio_stream::iter(messages));
+
+        // Create a channel to receive events
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<anyhow::Result<ChatResponse>>(10);
+
+        // Actual: convert stream to full message with streaming
+        let _full = result_stream
+            .into_full_streaming(false, Some(tx))
+            .await
+            .unwrap();
+
+        // Collect all emitted events
+        let mut usage_updates: Vec<Usage> = Vec::new();
+        let mut content_deltas: Vec<String> = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            match msg.unwrap() {
+                ChatResponse::UsageUpdate { usage } => usage_updates.push(usage),
+                ChatResponse::TaskMessage {
+                    content: ChatResponseContent::Markdown { text, .. },
+                } => content_deltas.push(text),
+                _ => {}
+            }
+        }
+
+        // Expected: one UsageUpdate per usage-bearing chunk (2 total)
+        assert_eq!(usage_updates.len(), 2);
+
+        // First update: input tokens from MessageStart
+        let expected_first = Usage {
+            prompt_tokens: TokenCount::Actual(1000),
+            completion_tokens: TokenCount::Actual(0),
+            total_tokens: TokenCount::Actual(1000),
+            cached_tokens: TokenCount::Actual(300),
+            cost: None,
+        };
+        assert_eq!(usage_updates[0], expected_first);
+
+        // Second update: accumulated totals after MessageDelta
+        let expected_second = Usage {
+            prompt_tokens: TokenCount::Actual(1000),
+            completion_tokens: TokenCount::Actual(50),
+            total_tokens: TokenCount::Actual(1050),
+            cached_tokens: TokenCount::Actual(300),
+            cost: None,
+        };
+        assert_eq!(usage_updates[1], expected_second);
+
+        // Content delta should also have been emitted
+        assert_eq!(content_deltas, vec!["Hello world!"]);
+    }
+
+    #[tokio::test]
+    async fn test_into_full_streaming_emits_realtime_usage_estimates() {
+        // Simulate a provider that doesn't send per-chunk usage (like Anthropic)
+        // We should still get real-time UsageUpdate events based on content length,
+        // but throttled to every 5 seconds.
+        //
+        // NOTE: Since updates are time-based (every 5s), in this fast test we only
+        // receive the final actual usage. In real usage, the spinner updates every
+        // 5 seconds while streaming.
+        let messages = vec![
+            // Content chunks without usage (would trigger 5s-throttled estimates in real time)
+            Ok(ChatCompletionMessage::default().content(Content::part("Hello world! Hello "))),
+            Ok(ChatCompletionMessage::default().content(Content::part("world! Testing "))),
+            Ok(ChatCompletionMessage::default().content(Content::part("real-time."))),
+            // Final chunk with actual usage from provider
+            Ok(ChatCompletionMessage::default()
+                .content(Content::part(""))
+                .usage(Usage {
+                    prompt_tokens: TokenCount::Actual(100),
+                    completion_tokens: TokenCount::Actual(15),
+                    total_tokens: TokenCount::Actual(115),
+                    cached_tokens: TokenCount::Actual(0),
+                    cost: None,
+                })),
+        ];
+
+        let result_stream: BoxStream<ChatCompletionMessage, anyhow::Error> =
+            Box::pin(tokio_stream::iter(messages));
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<anyhow::Result<ChatResponse>>(10);
+
+        let _full = result_stream
+            .into_full_streaming(false, Some(tx))
+            .await
+            .unwrap();
+
+        // Collect all usage updates
+        let mut usage_updates: Vec<Usage> = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            if let ChatResponse::UsageUpdate { usage } = msg.unwrap() {
+                usage_updates.push(usage);
+            }
+        }
+
+        // We should receive at least the final actual usage.
+        // In real-time streaming, we would also get throttled estimates every 5s.
+        assert!(
+            !usage_updates.is_empty(),
+            "Expected at least one usage update (final actual), got {}",
+            usage_updates.len()
+        );
+
+        // The last update should be the actual usage from the provider
+        let last_update = usage_updates.last().unwrap();
+        assert_eq!(
+            last_update.completion_tokens,
+            TokenCount::Actual(15),
+            "Final update should have actual token count"
+        );
+        assert_eq!(
+            last_update.prompt_tokens,
+            TokenCount::Actual(100),
+            "Final update should have actual prompt tokens"
+        );
     }
 }

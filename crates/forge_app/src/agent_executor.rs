@@ -121,6 +121,7 @@ impl<S: Services + EnvironmentInfra<Config = forge_config::ForgeConfig>> AgentEx
                             agent_id.as_str()
                         ));
                 }
+                ChatResponse::UsageUpdate { .. } => {}
             }
         }
         if !output.is_empty() {

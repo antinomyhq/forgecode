@@ -146,6 +146,11 @@ pub struct Usage {
 
     pub cache_read_input_tokens: Option<usize>,
     pub cache_creation_input_tokens: Option<usize>,
+
+    /// Anthropic extended thinking tokens (e.g., from Claude 3.7 Sonnet with
+    /// thinking enabled) These need to be added to output_tokens to get
+    /// total completion tokens
+    pub thinking_tokens: Option<usize>,
 }
 
 impl From<Usage> for forge_domain::Usage {
@@ -165,10 +170,9 @@ impl From<Usage> for forge_domain::Usage {
         // prompt_tokens should include ALL input tokens
         let prompt_tokens = TokenCount::Actual(input_tokens + cache_creation + cache_read);
 
-        let completion_tokens = usage
-            .output_tokens
-            .map(TokenCount::Actual)
-            .unwrap_or_default();
+        let completion_tokens = TokenCount::Actual(
+            usage.output_tokens.unwrap_or_default() + usage.thinking_tokens.unwrap_or_default(),
+        );
 
         // cached_tokens represents tokens that benefited from caching
         // This includes both cache creation and cache reads
@@ -448,6 +452,7 @@ mod tests {
                             output_tokens: Some(1),
                             cache_creation_input_tokens: None,
                             cache_read_input_tokens: None,
+                            thinking_tokens: None,
                         },
                     },
                 },
@@ -492,6 +497,7 @@ mod tests {
                         output_tokens: Some(12),
                         cache_creation_input_tokens: None,
                         cache_read_input_tokens: None,
+                        thinking_tokens: None,
                     },
                 },
             ),
@@ -543,6 +549,7 @@ mod tests {
             output_tokens: Some(50),
             cache_creation_input_tokens: Some(200),
             cache_read_input_tokens: Some(300),
+            thinking_tokens: None,
         };
 
         let actual: forge_domain::Usage = fixture.into();
@@ -566,6 +573,30 @@ mod tests {
     }
 
     #[test]
+    fn test_usage_conversion_includes_thinking_tokens() {
+        use forge_domain::TokenCount;
+
+        let fixture = Usage {
+            input_tokens: Some(100),
+            output_tokens: Some(50),
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
+            thinking_tokens: Some(300),
+        };
+
+        let actual: forge_domain::Usage = fixture.into();
+
+        let expected_prompt = TokenCount::Actual(100);
+        let expected_completion = TokenCount::Actual(350);
+        let expected_total = TokenCount::Actual(450);
+
+        assert_eq!(actual.prompt_tokens, expected_prompt);
+        assert_eq!(actual.completion_tokens, expected_completion);
+        assert_eq!(actual.total_tokens, expected_total);
+        assert_eq!(actual.cached_tokens, TokenCount::Actual(0));
+    }
+
+    #[test]
     fn test_usage_conversion_without_cache() {
         use forge_domain::TokenCount;
 
@@ -574,6 +605,7 @@ mod tests {
             output_tokens: Some(50),
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
+            thinking_tokens: None,
         };
 
         let actual: forge_domain::Usage = fixture.into();
@@ -601,6 +633,7 @@ mod tests {
             output_tokens: Some(50),
             cache_creation_input_tokens: Some(0),
             cache_read_input_tokens: Some(500),
+            thinking_tokens: None,
         };
 
         let actual: forge_domain::Usage = fixture.into();

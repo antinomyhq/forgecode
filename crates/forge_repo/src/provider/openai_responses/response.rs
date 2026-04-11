@@ -91,9 +91,17 @@ impl IntoDomain for oai::ResponseUsage {
     type Domain = Usage;
 
     fn into_domain(self) -> Self::Domain {
+        let prompt_tokens = self.input_tokens as usize;
+        // For reasoning models, output_tokens may only count visible tokens,
+        // while reasoning_tokens are in the details. Use total - prompt to ensure
+        // we count all output tokens including reasoning.
+        let derived_completion_tokens = (self.total_tokens as usize).saturating_sub(prompt_tokens);
+        let reported_completion_tokens = self.output_tokens as usize;
+        let completion_tokens = derived_completion_tokens.max(reported_completion_tokens);
+
         Usage {
-            prompt_tokens: TokenCount::Actual(self.input_tokens as usize),
-            completion_tokens: TokenCount::Actual(self.output_tokens as usize),
+            prompt_tokens: TokenCount::Actual(prompt_tokens),
+            completion_tokens: TokenCount::Actual(completion_tokens),
             total_tokens: TokenCount::Actual(self.total_tokens as usize),
             cached_tokens: TokenCount::Actual(self.input_tokens_details.cached_tokens as usize),
             cost: None,
@@ -827,6 +835,28 @@ mod tests {
         let fixture = fixture_response_usage();
         let actual = fixture.into_domain();
         let expected = fixture_expected_usage();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_response_usage_into_domain_prefers_total_minus_input_for_reasoning_models() {
+        let fixture = oai::ResponseUsage {
+            input_tokens: 100,
+            output_tokens: 50,
+            total_tokens: 180,
+            input_tokens_details: oai::InputTokenDetails { cached_tokens: 20 },
+            output_tokens_details: oai::OutputTokenDetails { reasoning_tokens: 30 },
+        };
+
+        let actual = fixture.into_domain();
+        let expected = Usage {
+            prompt_tokens: TokenCount::Actual(100),
+            completion_tokens: TokenCount::Actual(80),
+            total_tokens: TokenCount::Actual(180),
+            cached_tokens: TokenCount::Actual(20),
+            cost: None,
+        };
 
         assert_eq!(actual, expected);
     }
