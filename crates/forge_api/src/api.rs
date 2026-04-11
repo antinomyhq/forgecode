@@ -177,7 +177,11 @@ pub trait API: Sync + Send {
     async fn get_skills(&self) -> Result<Vec<Skill>>;
 
     /// Generate a shell command from natural language prompt
-    async fn generate_command(&self, prompt: UserPrompt) -> Result<String>;
+    async fn generate_command(
+        &self,
+        prompt: UserPrompt,
+        shell_context: Option<String>,
+    ) -> Result<String>;
 
     /// Initiate provider auth flow
     async fn init_provider_auth(

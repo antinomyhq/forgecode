@@ -29,6 +29,16 @@ pub struct Cli {
     #[arg(skip)]
     pub piped_input: Option<String>,
 
+    /// Path to a file containing shell terminal context (recent commands, exit
+    /// codes, terminal output). Populated by the zsh plugin to provide
+    /// terminal context when invoking forge from the shell.
+    #[arg(long, hide = true)]
+    pub shell_context: Option<PathBuf>,
+
+    /// Shell context content (populated internally from --shell-context file)
+    #[arg(skip)]
+    pub shell_context_content: Option<String>,
+
     /// Path to a JSON file containing the conversation to execute.
     #[arg(long)]
     pub conversation: Option<PathBuf>,

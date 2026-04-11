@@ -39,11 +39,21 @@ function _forge_exec_interactive() {
     local agent_id="${_FORGE_ACTIVE_AGENT:-forge}"
     local -a cmd
     cmd=($_FORGE_BIN --agent "$agent_id")
+
+    # Build shell context and pass via temp file
+    local ctx_file=""
+    if ctx_file=$(_forge_build_shell_context); then
+        cmd+=(--shell-context "$ctx_file")
+    fi
+
     cmd+=("$@")
     [[ -n "$_FORGE_SESSION_MODEL" ]] && local -x FORGE_SESSION__MODEL_ID="$_FORGE_SESSION_MODEL"
     [[ -n "$_FORGE_SESSION_PROVIDER" ]] && local -x FORGE_SESSION__PROVIDER_ID="$_FORGE_SESSION_PROVIDER"
     [[ -n "$_FORGE_SESSION_REASONING_EFFORT" ]] && local -x FORGE_REASONING__EFFORT="$_FORGE_SESSION_REASONING_EFFORT"
     "${cmd[@]}" </dev/tty >/dev/tty
+
+    # Clean up temp file
+    [[ -n "$ctx_file" ]] && rm -f "$ctx_file" 2>/dev/null
 }
 
 function _forge_reset() {

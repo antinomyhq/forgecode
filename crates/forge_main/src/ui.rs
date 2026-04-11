@@ -1805,8 +1805,9 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
     /// Handle the cmd command - generates shell command from natural language
     async fn on_cmd(&mut self, prompt: UserPrompt) -> anyhow::Result<()> {
         self.spinner.start(Some("Generating"))?;
+        let shell_context = self.cli.shell_context_content.clone();
 
-        match self.api.generate_command(prompt).await {
+        match self.api.generate_command(prompt, shell_context).await {
             Ok(command) => {
                 self.spinner.stop(None)?;
                 self.writeln(command)?;
@@ -3141,24 +3142,29 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             None => Event::empty(),
         };
 
-        // Only use CLI piped_input as additional context when BOTH --prompt and piped
-        // input are provided. This handles the case: `echo "context" | forge -p
-        // "question"` where piped input provides context and --prompt provides
-        // the actual question.
-        //
-        // When only piped input is provided (no --prompt), it's already used as the
-        // main content (passed via the `content` parameter). We must NOT add it again
-        // as additional_context, otherwise the input appears twice in the
-        // conversation. We detect this by checking if cli.prompt exists - if it
-        // does, the content came from --prompt and piped input should be
-        // additional context.
+        // Build additional context from shell context and/or piped input.
+        // Shell context (from --shell-context) is always included when available.
+        // Piped input is only additional context when BOTH --prompt and piped
+        // input are provided (e.g., `echo "context" | forge -p "question"`).
+        // When only piped input is provided (no --prompt), it's already used as
+        // the main content via the `content` parameter.
+        let mut additional_parts: Vec<String> = Vec::new();
+
+        if let Some(shell_ctx) = self.cli.shell_context_content.clone() {
+            additional_parts.push(shell_ctx);
+        }
+
         let piped_input = self.cli.piped_input.clone();
         let has_explicit_prompt = self.cli.prompt.is_some();
         if let Some(piped) = piped_input
             && has_content
             && has_explicit_prompt
         {
-            event = event.additional_context(piped);
+            additional_parts.push(piped);
+        }
+
+        if !additional_parts.is_empty() {
+            event = event.additional_context(additional_parts.join("\n\n"));
         }
 
         // Create the chat request with the event

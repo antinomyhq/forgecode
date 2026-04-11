@@ -105,6 +105,15 @@ async fn run() -> Result<()> {
     let config =
         ForgeConfig::read().context("Failed to read Forge configuration from .forge.toml")?;
 
+    // Read shell context file if provided by the zsh plugin
+    if let Some(ref ctx_path) = cli.shell_context
+        && let Ok(content) = std::fs::read_to_string(ctx_path) {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                cli.shell_context_content = Some(trimmed.to_string());
+            }
+        }
+
     // Handle worktree creation if specified
     let cwd: PathBuf = match (&cli.sandbox, &cli.directory) {
         (Some(sandbox), Some(cli)) => {

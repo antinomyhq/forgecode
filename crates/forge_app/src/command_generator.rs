@@ -32,8 +32,16 @@ where
         Self { services }
     }
 
-    /// Generates a shell command from a natural language prompt
-    pub async fn generate(&self, prompt: UserPrompt) -> Result<String> {
+    /// Generates a shell command from a natural language prompt.
+    ///
+    /// When `shell_context` is provided (from the zsh plugin's terminal context
+    /// capture), it is included in the user prompt so the LLM can reference
+    /// recent commands, exit codes, and terminal output.
+    pub async fn generate(
+        &self,
+        prompt: UserPrompt,
+        shell_context: Option<String>,
+    ) -> Result<String> {
         // Get system information for context
         let env = self.services.get_environment();
 
@@ -59,8 +67,15 @@ where
             }
         };
 
-        // Build user prompt with task and recent commands
-        let user_content = format!("<task>{}</task>", prompt.as_str());
+        // Build user prompt with task, optionally including terminal context
+        let user_content = match shell_context {
+            Some(ctx) => format!(
+                "<terminal_context>\n{}\n</terminal_context>\n\n<task>{}</task>",
+                ctx,
+                prompt.as_str()
+            ),
+            None => format!("<task>{}</task>", prompt.as_str()),
+        };
 
         // Create context with system and user prompts
         let ctx = self.create_context(rendered_system_prompt, user_content, &model);
@@ -103,7 +118,7 @@ where
 mod tests {
     use forge_domain::{
         AuthCredential, AuthDetails, AuthMethod, ChatCompletionMessage, Content, FinishReason,
-        ModelSource, ProviderId, ProviderResponse, ResultStream,
+        ModelSource, ProviderId, ProviderResponse, ResultStream, Role,
     };
     use tokio::sync::Mutex;
     use url::Url;
@@ -288,7 +303,7 @@ mod tests {
         let generator = CommandGenerator::new(fixture.clone());
 
         let actual = generator
-            .generate(UserPrompt::from("list all files".to_string()))
+            .generate(UserPrompt::from("list all files".to_string()), None)
             .await
             .unwrap();
 
@@ -303,7 +318,7 @@ mod tests {
         let generator = CommandGenerator::new(fixture.clone());
 
         let actual = generator
-            .generate(UserPrompt::from("show current directory".to_string()))
+            .generate(UserPrompt::from("show current directory".to_string()), None)
             .await
             .unwrap();
 
@@ -313,12 +328,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_generate_with_shell_context() {
+        let fixture = MockServices::new(
+            r#"{"command": "cargo build --release"}"#,
+            vec![("Cargo.toml", false)],
+        );
+        let generator = CommandGenerator::new(fixture.clone());
+        let shell_context = Some(
+            "## Recent Commands\n| # | Command | Exit | Time |\n|---|---------|------|------|\n| 1 | cargo build | 101 | 12:00:00 |".to_string(),
+        );
+
+        let actual = generator
+            .generate(
+                UserPrompt::from("fix the command I just ran".to_string()),
+                shell_context,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(actual, "cargo build --release");
+        let captured_context = fixture.captured_context.lock().await.clone().unwrap();
+        let user_content = captured_context
+            .messages
+            .iter()
+            .find(|m| m.has_role(Role::User))
+            .expect("should have a user message")
+            .content()
+            .expect("user message should have content");
+        assert!(user_content.contains("<terminal_context>"));
+        assert!(user_content.contains("</terminal_context>"));
+        assert!(user_content.contains("cargo build"));
+        assert!(user_content.contains("<task>fix the command I just ran</task>"));
+    }
+
+    #[tokio::test]
     async fn test_generate_fails_when_missing_tag() {
         let fixture = MockServices::new(r#"{"invalid": "json"}"#, vec![]);
         let generator = CommandGenerator::new(fixture);
 
         let actual = generator
-            .generate(UserPrompt::from("do something".to_string()))
+            .generate(UserPrompt::from("do something".to_string()), None)
             .await;
 
         assert!(actual.is_err());

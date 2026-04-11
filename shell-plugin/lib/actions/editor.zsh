@@ -80,10 +80,21 @@ function _forge_action_suggest() {
     fi
     
     echo
+
+    # Build shell context and pass via temp file (same pattern as _forge_exec_interactive)
+    local ctx_file=""
+    local -a ctx_args=()
+    if ctx_file=$(_forge_build_shell_context); then
+        ctx_args=(--shell-context "$ctx_file")
+    fi
+
     # Generate the command
     local generated_command
-    generated_command=$(FORCE_COLOR=true CLICOLOR_FORCE=1 _forge_exec suggest "$description")
-    
+    generated_command=$(FORCE_COLOR=true CLICOLOR_FORCE=1 _forge_exec "${ctx_args[@]}" suggest "$description")
+
+    # Clean up temp file
+    [[ -n "$ctx_file" ]] && rm -f "$ctx_file" 2>/dev/null
+
     if [[ -n "$generated_command" ]]; then
         # Replace the buffer with the generated command
         BUFFER="$generated_command"
