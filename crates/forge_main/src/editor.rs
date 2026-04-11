@@ -1,14 +1,17 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crossterm::event::Event;
 use forge_api::Environment;
 use nu_ansi_term::{Color, Style};
 use reedline::{
-    ColumnarMenu, DefaultHinter, EditCommand, Emacs, FileBackedHistory, KeyCode, KeyModifiers,
-    MenuBuilder, Prompt, Reedline, ReedlineEvent, ReedlineMenu, Signal, default_emacs_keybindings,
+    ColumnarMenu, DefaultHinter, EditCommand, EditMode, Emacs, FileBackedHistory, KeyCode,
+    KeyModifiers, MenuBuilder, Prompt, PromptEditMode, Reedline, ReedlineEvent, ReedlineMenu,
+    ReedlineRawEvent, Signal, default_emacs_keybindings,
 };
 
 use super::completer::InputCompleter;
+use super::zsh::paste::wrap_pasted_text;
 use crate::model::ForgeCommandManager;
 
 // TODO: Store the last `HISTORY_CAPACITY` commands in the history file
@@ -83,7 +86,7 @@ impl ForgeEditor {
                 .with_selected_text_style(Style::new().on(Color::White).fg(Color::Black)),
         );
 
-        let edit_mode = Box::new(Emacs::new(Self::init()));
+        let edit_mode = Box::new(ForgeEditMode::new(Self::init()));
 
         let editor = Reedline::create()
             .with_completer(Box::new(InputCompleter::new(env.cwd, manager)))
@@ -117,6 +120,48 @@ impl ForgeEditor {
 #[error(transparent)]
 pub struct ReadLineError(std::io::Error);
 
+/// Custom edit mode that wraps Emacs and intercepts paste events.
+///
+/// When the terminal sends a bracketed-paste (e.g. from a drag-and-drop),
+/// this mode checks whether the pasted text is an existing file path and,
+/// if so, wraps it in `@[...]` before it reaches the reedline buffer. This
+/// gives the user immediate visual feedback in the input field.
+struct ForgeEditMode {
+    inner: Emacs,
+}
+
+impl ForgeEditMode {
+    /// Creates a new `ForgeEditMode` wrapping an Emacs mode with the given
+    /// keybindings.
+    fn new(keybindings: reedline::Keybindings) -> Self {
+        Self { inner: Emacs::new(keybindings) }
+    }
+}
+
+impl EditMode for ForgeEditMode {
+    fn parse_event(&mut self, event: ReedlineRawEvent) -> ReedlineEvent {
+        // Convert to the underlying crossterm event so we can inspect it
+        let raw: Event = event.into();
+
+        if let Event::Paste(ref body) = raw {
+            let wrapped = wrap_pasted_text(body);
+            return ReedlineEvent::Edit(vec![EditCommand::InsertString(wrapped)]);
+        }
+
+        // For every other event, delegate to the inner Emacs mode.
+        // We need to reconstruct a ReedlineRawEvent from the crossterm Event.
+        // ReedlineRawEvent implements TryFrom<Event>.
+        match ReedlineRawEvent::try_from(raw) {
+            Ok(raw_event) => self.inner.parse_event(raw_event),
+            Err(()) => ReedlineEvent::None,
+        }
+    }
+
+    fn edit_mode(&self) -> PromptEditMode {
+        self.inner.edit_mode()
+    }
+}
+
 impl From<Signal> for ReadResult {
     fn from(signal: Signal) -> Self {
         match signal {
@@ -133,3 +178,4 @@ impl From<Signal> for ReadResult {
         }
     }
 }
+

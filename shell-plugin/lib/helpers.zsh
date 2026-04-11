@@ -55,7 +55,6 @@ function _forge_reset() {
   zle reset-prompt
 }
 
-
 # Helper function to find the index of a value in a list (1-based)
 # Returns the index if found, 1 otherwise
 # Usage: _forge_find_index <output> <value_to_find> [field_number] [field_number2] [value_to_find2]
