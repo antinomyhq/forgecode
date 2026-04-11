@@ -252,7 +252,7 @@ impl Provider<Url> {
         self.credential
             .as_ref()
             .and_then(|c| match &c.auth_details {
-                AuthDetails::ApiKey(key) => Some(key),
+                AuthDetails::ApiKey(provider) => Some(provider.api_key()),
                 _ => None,
             })
     }
@@ -354,7 +354,7 @@ mod test_helpers {
     fn make_credential(provider_id: ProviderId, key: &str) -> Option<AuthCredential> {
         Some(AuthCredential {
             id: provider_id,
-            auth_details: AuthDetails::ApiKey(ApiKey::from(key.to_string())),
+            auth_details: AuthDetails::static_api_key(ApiKey::from(key.to_string())),
             url_params: HashMap::new(),
         })
     }
@@ -608,7 +608,7 @@ mod tests {
                 .unwrap(),
             credential: Some(AuthCredential {
                 id: ProviderId::IO_INTELLIGENCE,
-                auth_details: AuthDetails::ApiKey(ApiKey::from(fixture.to_string())),
+                auth_details: AuthDetails::static_api_key(ApiKey::from(fixture.to_string())),
                 url_params: HashMap::new(),
             }),
             auth_methods: vec![crate::AuthMethod::ApiKey],
@@ -632,7 +632,7 @@ mod tests {
             url: Url::from_str("https://api.x.ai/v1/chat/completions").unwrap(),
             credential: Some(AuthCredential {
                 id: ProviderId::XAI,
-                auth_details: AuthDetails::ApiKey(ApiKey::from(fixture.to_string())),
+                auth_details: AuthDetails::static_api_key(ApiKey::from(fixture.to_string())),
                 url_params: HashMap::new(),
             }),
             auth_methods: vec![crate::AuthMethod::ApiKey],

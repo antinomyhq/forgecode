@@ -132,7 +132,7 @@ mod tests {
                         url: Url::parse("https://api.openai.com").unwrap(),
                         credential: Some(forge_domain::AuthCredential {
                             id: ProviderId::OPENAI,
-                            auth_details: forge_domain::AuthDetails::ApiKey(
+                            auth_details: forge_domain::AuthDetails::static_api_key(
                                 forge_domain::ApiKey::from("test-key".to_string()),
                             ),
                             url_params: HashMap::new(),
@@ -160,7 +160,7 @@ mod tests {
                         url_params: vec![],
                         credential: Some(forge_domain::AuthCredential {
                             id: ProviderId::ANTHROPIC,
-                            auth_details: forge_domain::AuthDetails::ApiKey(
+                            auth_details: forge_domain::AuthDetails::static_api_key(
                                 forge_domain::ApiKey::from("test-key".to_string()),
                             ),
                             url_params: HashMap::new(),
