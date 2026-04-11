@@ -73,6 +73,15 @@ impl<W: Write> StreamdownRenderer<W> {
         }
     }
 
+    /// Update the rendering width in place.
+    ///
+    /// Delegates to [`Renderer::set_width`], which is safe to call between
+    /// events because the width is read fresh on each `render_event()` call
+    /// and no cached state depends on it.
+    pub fn set_width(&mut self, width: usize) {
+        self.renderer.set_width(width);
+    }
+
     /// Push a token to the renderer.
     ///
     /// Tokens are buffered until a complete line is received, then rendered.

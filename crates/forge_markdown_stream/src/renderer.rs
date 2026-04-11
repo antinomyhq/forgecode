@@ -54,6 +54,15 @@ impl<W: Write> Renderer<W> {
         }
     }
 
+    /// Update the rendering width.
+    ///
+    /// The `width` field is read fresh by `current_width()` on each
+    /// `render_event()` call and is not used to derive any cached state, so
+    /// updating it in place between events is safe.
+    pub fn set_width(&mut self, width: usize) {
+        self.width = width;
+    }
+
     /// Set a new theme.
     #[allow(dead_code)]
     pub fn set_theme(&mut self, theme: Theme) {

@@ -97,13 +97,16 @@ pub struct StreamingWriter<P: ConsoleWriter> {
     active: Option<ActiveRenderer<P>>,
     spinner: SharedSpinner<P>,
     printer: Arc<P>,
+    /// The terminal width that the active renderer is currently using.
+    /// Tracked so we can detect changes and update the renderer in place.
+    last_width: usize,
 }
 
 impl<P: ConsoleWriter + 'static> StreamingWriter<P> {
     /// Creates a new stream writer with the given shared spinner and output
     /// printer.
     pub fn new(spinner: SharedSpinner<P>, printer: Arc<P>) -> Self {
-        Self { active: None, spinner, printer }
+        Self { active: None, spinner, printer, last_width: term_width() }
     }
 
     /// Writes markdown content with normal styling.
@@ -133,6 +136,29 @@ impl<P: ConsoleWriter + 'static> StreamingWriter<P> {
     }
 
     fn ensure_renderer(&mut self, new_style: Style) -> Result<()> {
+        // Poll the current terminal width. The ioctl(TIOCGWINSZ) syscall
+        // costs ~100ns-1us reading a kernel-cached struct, so polling on
+        // every call is negligible compared to terminal write I/O.
+        let current_width = term_width();
+
+        // If the width changed and we have an active renderer, update it
+        // in place. This preserves all parser/renderer state (code block
+        // context, blockquote depth, list numbering, table rows).
+        if current_width != self.last_width {
+            // Pause the spinner before updating the width. During a resize
+            // the terminal reflows content, and the spinner's
+            // `finish_and_clear()` would write stale cursor positions,
+            // erasing visible output. `stop(None)` is idempotent -- it is
+            // a no-op when no spinner is active. The spinner resumes
+            // naturally via `resume_spinner()` on the next newline write.
+            let _ = self.spinner.stop(None);
+
+            if let Some(ref mut active) = self.active {
+                active.renderer.set_width(current_width);
+            }
+            self.last_width = current_width;
+        }
+
         let needs_switch = self.active.as_ref().is_some_and(|a| a.style != new_style);
 
         if needs_switch && let Some(old) = self.active.take() {
@@ -145,7 +171,7 @@ impl<P: ConsoleWriter + 'static> StreamingWriter<P> {
                 printer: self.printer.clone(),
                 style: new_style,
             };
-            let renderer = StreamdownRenderer::new(writer, term_width());
+            let renderer = StreamdownRenderer::new(writer, current_width);
             self.active = Some(ActiveRenderer { renderer, style: new_style });
         }
         Ok(())
