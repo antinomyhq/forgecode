@@ -144,7 +144,7 @@ impl AgentExt for Agent {
         }
 
         // Apply workflow reasoning configuration to agents.
-        // Agent-level fields take priority; config fills in any unset fields.
+        // User config takes priority; agent defaults fill in any unset fields.
         if let Some(ref config_reasoning) = config.reasoning {
             use forge_config::Effort as ConfigEffort;
             let config_as_domain = ReasoningConfig {
@@ -161,9 +161,9 @@ impl AgentExt for Agent {
                 exclude: config_reasoning.exclude,
                 enabled: config_reasoning.enabled,
             };
-            // Start from the agent's own settings and fill unset fields from config.
-            let mut merged = agent.reasoning.clone().unwrap_or_default();
-            merged.merge(config_as_domain);
+            // Start from user config; agent defaults fill unset fields.
+            let mut merged = config_as_domain;
+            merged.merge(agent.reasoning.clone().unwrap_or_default());
             agent.reasoning = Some(merged);
         }
 
@@ -208,10 +208,10 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    /// When the agent already has reasoning fields set, those fields take
-    /// priority; config only fills in fields the agent left unset.
+    /// When both the agent and config set reasoning fields, user config
+    /// takes priority; agent values only fill in fields the config left unset.
     #[test]
-    fn test_reasoning_agent_fields_take_priority_over_config() {
+    fn test_reasoning_config_fields_take_priority_over_agent() {
         let config = ForgeConfig::default().reasoning(
             ConfigReasoningConfig::default()
                 .enabled(true)
@@ -219,16 +219,66 @@ mod tests {
                 .max_tokens(1024_usize),
         );
 
-        // Agent overrides effort but leaves enabled and max_tokens unset.
+        // Agent overrides effort but config takes priority.
         let agent = fixture_agent().reasoning(ReasoningConfig::default().effort(Effort::High));
 
         let actual = agent.apply_config(&config).reasoning;
 
         let expected = Some(
             ReasoningConfig::default()
-                .effort(Effort::High) // agent's value wins
+                .effort(Effort::Low) // config's value wins
                 .enabled(true) // filled in from config
                 .max_tokens(1024_usize), // filled in from config
+        );
+
+        assert_eq!(actual, expected);
+    }
+
+    /// When the user sets enabled=false in config, it overrides the agent's
+    /// enabled=true.  This is the core scenario from issue #2924.
+    #[test]
+    fn test_reasoning_config_enabled_false_overrides_agent() {
+        let config = ForgeConfig::default().reasoning(
+            ConfigReasoningConfig::default()
+                .enabled(false)
+                .effort(ConfigEffort::None),
+        );
+
+        // Agent has enabled=true (like forge.md).
+        let agent = fixture_agent().reasoning(ReasoningConfig::default().enabled(true));
+
+        let actual = agent.apply_config(&config).reasoning;
+
+        let expected = Some(
+            ReasoningConfig::default()
+                .enabled(false)
+                .effort(Effort::None),
+        );
+
+        assert_eq!(actual, expected);
+    }
+
+    /// When the user config leaves fields unset, the agent's defaults fill
+    /// them.
+    #[test]
+    fn test_reasoning_agent_fills_unset_config_fields() {
+        let config = ForgeConfig::default()
+            .reasoning(ConfigReasoningConfig::default().effort(ConfigEffort::Medium));
+
+        // Agent has enabled=true and max_tokens=2048; config has neither.
+        let agent = fixture_agent().reasoning(
+            ReasoningConfig::default()
+                .enabled(true)
+                .max_tokens(2048_usize),
+        );
+
+        let actual = agent.apply_config(&config).reasoning;
+
+        let expected = Some(
+            ReasoningConfig::default()
+                .effort(Effort::Medium) // from config
+                .enabled(true) // from agent (config had None)
+                .max_tokens(2048_usize), // from agent (config had None)
         );
 
         assert_eq!(actual, expected);

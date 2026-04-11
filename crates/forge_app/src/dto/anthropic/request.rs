@@ -144,19 +144,24 @@ impl TryFrom<forge_domain::Context> for Request {
                         None,
                     )
                 } else if let Some(effort) = reasoning.effort {
-                    // Effort without budget → newer output_config API.
-                    let output_effort = match effort {
-                        forge_domain::Effort::Low => OutputEffort::Low,
-                        forge_domain::Effort::High => OutputEffort::High,
-                        forge_domain::Effort::Max => OutputEffort::Max,
-                        // Map unsupported variants to the nearest Anthropic-valid effort.
-                        forge_domain::Effort::None | forge_domain::Effort::Minimal => {
-                            OutputEffort::Low
-                        }
-                        forge_domain::Effort::Medium => OutputEffort::Medium,
-                        forge_domain::Effort::XHigh => OutputEffort::Max,
-                    };
-                    (None, Some(OutputConfig { effort: output_effort }))
+                    if matches!(effort, forge_domain::Effort::None) {
+                        // "None" means skip reasoning entirely.
+                        (None, None)
+                    } else {
+                        // Effort without budget → newer output_config API.
+                        let output_effort = match effort {
+                            forge_domain::Effort::Low | forge_domain::Effort::Minimal => {
+                                OutputEffort::Low
+                            }
+                            forge_domain::Effort::Medium => OutputEffort::Medium,
+                            forge_domain::Effort::High => OutputEffort::High,
+                            forge_domain::Effort::Max | forge_domain::Effort::XHigh => {
+                                OutputEffort::Max
+                            }
+                            forge_domain::Effort::None => unreachable!(),
+                        };
+                        (None, Some(OutputConfig { effort: output_effort }))
+                    }
                 } else {
                     // Enabled-only → thinking with default budget.
                     (
@@ -677,6 +682,55 @@ mod tests {
 
         let actual = Request::try_from(fixture).unwrap();
 
+        assert_eq!(actual.thinking, None);
+    }
+
+    #[test]
+    fn test_effort_none_with_enabled_skips_reasoning() {
+        // Effort::None means "skip reasoning entirely", even if enabled=true.
+        let fixture = Context::default().reasoning(ReasoningConfig {
+            enabled: Some(true),
+            effort: Some(forge_domain::Effort::None),
+            max_tokens: None,
+            exclude: None,
+        });
+
+        let actual = Request::try_from(fixture).unwrap();
+
+        assert_eq!(actual.thinking, None);
+        assert_eq!(actual.output_config, None);
+    }
+
+    #[test]
+    fn test_effort_none_with_disabled_skips_reasoning() {
+        let fixture = Context::default().reasoning(ReasoningConfig {
+            enabled: Some(false),
+            effort: Some(forge_domain::Effort::None),
+            max_tokens: None,
+            exclude: None,
+        });
+
+        let actual = Request::try_from(fixture).unwrap();
+
+        assert_eq!(actual.thinking, None);
+        assert_eq!(actual.output_config, None);
+    }
+
+    #[test]
+    fn test_effort_minimal_maps_to_low() {
+        let fixture = Context::default().reasoning(ReasoningConfig {
+            enabled: Some(true),
+            effort: Some(forge_domain::Effort::Minimal),
+            max_tokens: None,
+            exclude: None,
+        });
+
+        let actual = Request::try_from(fixture).unwrap();
+
+        assert_eq!(
+            actual.output_config,
+            Some(OutputConfig { effort: OutputEffort::Low })
+        );
         assert_eq!(actual.thinking, None);
     }
 
