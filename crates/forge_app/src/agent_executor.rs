@@ -97,7 +97,7 @@ impl<S: Services + EnvironmentInfra<Config = forge_config::ForgeConfig>> AgentEx
             match message {
                 ChatResponse::TaskMessage { ref content } => match content {
                     ChatResponseContent::ToolInput(_) => ctx.send(message).await?,
-                    ChatResponseContent::ToolOutput(_) => {}
+                    ChatResponseContent::ToolOutput(_) => ctx.send(message).await?,
                     ChatResponseContent::Markdown { text, partial } => {
                         if *partial {
                             output.push_str(text);
