@@ -1970,6 +1970,7 @@ dependencies = [
  "tonic",
  "tracing",
  "url",
+ "xxhash-rust",
 ]
 
 [[package]]
