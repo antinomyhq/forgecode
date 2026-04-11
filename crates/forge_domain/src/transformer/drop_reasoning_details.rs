@@ -9,6 +9,7 @@ impl Transformer for DropReasoningDetails {
         context.messages.iter_mut().for_each(|message| {
             if let crate::ContextMessage::Text(text) = &mut **message {
                 text.reasoning_details = None;
+                text.thought_signature = None;
             }
         });
 
@@ -180,5 +181,31 @@ mod tests {
         let snapshot =
             TransformationSnapshot::new("DropReasoningDetails_preserve_non_text", fixture, actual);
         assert_yaml_snapshot!(snapshot);
+    }
+
+    #[test]
+    fn test_drop_reasoning_clears_thought_signature() {
+        let reasoning_details = vec![ReasoningFull {
+            text: Some("thinking".to_string()),
+            signature: Some("sig_minimax".to_string()),
+            ..Default::default()
+        }];
+
+        let fixture = Context::default().add_message(ContextMessage::Text(
+            TextMessage::new(Role::Assistant, "response")
+                .model(crate::ModelId::new("MiniMax-M2.7"))
+                .reasoning_details(reasoning_details)
+                .thought_signature("minimax_thought_sig".to_string()),
+        ));
+
+        let mut transformer = DropReasoningDetails;
+        let actual = transformer.transform(fixture);
+
+        if let crate::ContextMessage::Text(text) = &*actual.messages[0] {
+            assert_eq!(text.reasoning_details, None);
+            assert_eq!(text.thought_signature, None);
+        } else {
+            panic!("expected TextMessage");
+        }
     }
 }
